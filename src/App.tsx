@@ -739,6 +739,7 @@ export default function App() {
         colorPalette={activePalette}
         themeMode={settings.themeMode}
         initialDate={taskInitialDate}
+        userId={currentUserAccount.id}
       />
 
       {/* Weekly Stats & Detailed Academic Progress Modal */}

@@ -19,7 +19,8 @@ export interface StudyTask {
   recurrenceDays?: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
   completed: boolean;
   completedAt?: string;
-  notes: string;
+  notes: string; // plain-text mirror of notesHtml, kept in sync for search
+  notesHtml?: string; // rich text content (Tiptap HTML)
   images: string[]; // base64 or image URLs
   reviewScheduled?: boolean;
   nextReviewDate?: string; // YYYY-MM-DD

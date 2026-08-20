@@ -24,6 +24,8 @@ import { StudyTask, ColorPalette, ThemeMode, RecurrenceType, TaskPriority, Subje
 import { COLOR_PALETTES, DEFAULT_SUBJECT_COLORS } from '../lib/theme';
 import { formatDateToISO, getBrasiliaDate } from '../lib/dateUtils';
 import { DataService } from '../lib/storage';
+import { SupabaseSyncService } from '../lib/supabaseSync';
+import { RichNoteEditor } from './RichNoteEditor';
 
 interface TaskEditorModalProps {
   task: Partial<StudyTask> | null;
@@ -34,6 +36,7 @@ interface TaskEditorModalProps {
   colorPalette: ColorPalette;
   themeMode: ThemeMode;
   initialDate?: string;
+  userId: string;
 }
 
 export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
@@ -45,6 +48,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
   colorPalette,
   themeMode,
   initialDate,
+  userId,
 }) => {
   const isDark = themeMode === 'dark';
   const pal = COLOR_PALETTES[colorPalette] || COLOR_PALETTES.purple;
@@ -68,6 +72,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
   const [recurrence, setRecurrence] = useState<RecurrenceType>(task?.recurrence || 'none');
   const [recurrenceDays, setRecurrenceDays] = useState<number[]>(task?.recurrenceDays || [1, 3, 5]);
   const [notes, setNotes] = useState(task?.notes || '');
+  const [notesHtml, setNotesHtml] = useState(task?.notesHtml || '');
   const [images, setImages] = useState<string[]>(task?.images || []);
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [reviewScheduled, setReviewScheduled] = useState(task?.reviewScheduled ?? true);
@@ -90,6 +95,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
       setRecurrence(task?.recurrence || 'none');
       setRecurrenceDays(task?.recurrenceDays || [1, 3, 5]);
       setNotes(task?.notes || '');
+      setNotesHtml(task?.notesHtml || '');
       setImages(task?.images || []);
       setReviewScheduled(task?.reviewScheduled ?? false);
       setPriority(task?.priority || 'medium');
@@ -221,6 +227,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
       completed: task?.completed || false,
       completedAt: task?.completedAt,
       notes: notes.trim(),
+      notesHtml,
       images,
       reviewScheduled,
       priority,
@@ -656,16 +663,16 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
               </div>
             </div>
 
-            <textarea
-              rows={4}
-              value={notes || ''}
-              onChange={(e) => setNotes(e.target.value)}
+            <RichNoteEditor
+              content={notesHtml}
+              onChange={(html, plainText) => {
+                setNotesHtml(html);
+                setNotes(plainText);
+              }}
+              onUploadImage={(file) => SupabaseSyncService.uploadTaskImage(userId, file)}
               placeholder="Escreva aqui seu resumo da aula, tópicos estudados, fórmulas-chave, dúvidas e lembretes para relacionar com o dia de estudo..."
-              className={`w-full p-3 rounded-xl border text-xs sm:text-sm font-mono leading-relaxed focus:outline-hidden transition-all ${
-                isDark
-                  ? 'bg-slate-900/80 border-slate-700 text-slate-100 placeholder-slate-500 focus:border-purple-500'
-                  : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-purple-500'
-              }`}
+              isDark={isDark}
+              accentColor={pal.previewColor}
             />
 
             {/* Attached Images Grid */}

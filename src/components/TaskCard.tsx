@@ -17,6 +17,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import DOMPurify from 'dompurify';
 import { StudyTask, ColorPalette, ThemeMode } from '../types';
 import { COLOR_PALETTES } from '../lib/theme';
 import { formatDuration, formatShortDate } from '../lib/dateUtils';
@@ -183,7 +184,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         </div>
 
         {/* Study Summary & Notes Preview */}
-        {task.notes && (
+        {(task.notes || task.notesHtml) && (
           <div
             className={`mt-3 p-3 rounded-2xl text-xs leading-relaxed transition-all ${
               isDark
@@ -218,13 +219,33 @@ export const TaskCard: React.FC<TaskCardProps> = ({
               )}
             </div>
 
-            <p
-              className={`whitespace-pre-line font-sans ${
-                !showFullNotes && task.notes.length > 140 ? 'line-clamp-2' : ''
-              }`}
-            >
-              {task.notes}
-            </p>
+            {task.notesHtml ? (
+              <div
+                className={`relative ${!showFullNotes && task.notes.length > 140 ? 'max-h-28 overflow-hidden' : ''}`}
+              >
+                <div
+                  className="rich-note-content"
+                  style={{ ['--rich-note-accent' as any]: pal.previewColor }}
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(task.notesHtml) }}
+                />
+                {!showFullNotes && task.notes.length > 140 && (
+                  <div
+                    className="absolute bottom-0 left-0 right-0 h-8 pointer-events-none"
+                    style={{
+                      background: `linear-gradient(to bottom, transparent, ${isDark ? '#0f172a' : '#f8fafc'})`,
+                    }}
+                  />
+                )}
+              </div>
+            ) : (
+              <p
+                className={`whitespace-pre-line font-sans ${
+                  !showFullNotes && task.notes.length > 140 ? 'line-clamp-2' : ''
+                }`}
+              >
+                {task.notes}
+              </p>
+            )}
           </div>
         )}
 

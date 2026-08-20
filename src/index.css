@@ -1,1 +1,78 @@
 @import "tailwindcss";
+
+/* Rich note content — shared between the Tiptap editor and the read-only card preview */
+.rich-note-content {
+  outline: none;
+  min-height: 6rem;
+}
+.rich-note-content p {
+  margin: 0.35em 0;
+}
+.rich-note-content h1 {
+  font-size: 1.25em;
+  font-weight: 700;
+  margin: 0.6em 0 0.3em;
+}
+.rich-note-content h2 {
+  font-size: 1.1em;
+  font-weight: 700;
+  margin: 0.5em 0 0.25em;
+}
+.rich-note-content ul,
+.rich-note-content ol {
+  padding-left: 1.25em;
+  margin: 0.35em 0;
+}
+.rich-note-content ul {
+  list-style: disc;
+}
+.rich-note-content ol {
+  list-style: decimal;
+}
+.rich-note-content blockquote {
+  border-left: 3px solid currentColor;
+  opacity: 0.85;
+  padding-left: 0.75em;
+  margin: 0.5em 0;
+  font-style: italic;
+}
+.rich-note-content code {
+  font-family: ui-monospace, monospace;
+  background: rgba(148, 163, 184, 0.2);
+  padding: 0.1em 0.35em;
+  border-radius: 0.3em;
+  font-size: 0.9em;
+}
+.rich-note-content a {
+  color: var(--rich-note-accent, #9333ea);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.rich-note-content img {
+  max-width: 100%;
+  border-radius: 0.75em;
+  margin: 0.5em 0;
+}
+.rich-note-content ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0.25em;
+}
+.rich-note-content ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+}
+.rich-note-content ul[data-type="taskList"] li > label {
+  margin-top: 0.2em;
+}
+.rich-note-content ul[data-type="taskList"] li[data-checked="true"] > div {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+.rich-note-content p.is-editor-empty:first-child::before {
+  color: rgb(100, 116, 139);
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
