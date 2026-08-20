@@ -19,6 +19,7 @@ import {
   Search,
   ChevronDown,
   PlusCircle,
+  Pencil,
 } from 'lucide-react';
 import { StudyTask, ColorPalette, ThemeMode, RecurrenceType, TaskPriority, SubjectItem } from '../types';
 import { COLOR_PALETTES, DEFAULT_SUBJECT_COLORS } from '../lib/theme';
@@ -80,6 +81,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
   const [tags, setTags] = useState<string[]>(task?.tags || []);
   const [newTagInput, setNewTagInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [activeTab, setActiveTab] = useState<'identity' | 'notes'>(task?.id ? 'notes' : 'identity');
 
   useEffect(() => {
     if (isOpen) {
@@ -101,6 +103,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
       setPriority(task?.priority || 'medium');
       setTags(task?.tags || []);
       setErrorMsg('');
+      setActiveTab(task?.id ? 'notes' : 'identity');
 
       if (task?.subject) {
         setSubjectSearch(task.subject || '');
@@ -185,12 +188,14 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     e.preventDefault();
     if (!title.trim()) {
       setErrorMsg('Por favor, informe o título ou assunto principal do bloco.');
+      setActiveTab('identity');
       return;
     }
 
     let finalSubjectName = selectedSubject.trim() || subjectSearch.trim();
     if (!finalSubjectName) {
       setErrorMsg('Por favor, selecione ou cadastre uma disciplina.');
+      setActiveTab('identity');
       return;
     }
 
@@ -246,25 +251,30 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     { label: 'Sáb', val: 6 },
   ];
 
+  const identityLabel = selectedSubject || subjectSearch || 'Sem matéria';
+  const timeLabel = isSpecificTime
+    ? `${startTime || '--:--'} - ${endTime || '--:--'}`
+    : `${durationMinutes ?? 60} min`;
+
   return (
     <div
       id="task-editor-modal-overlay"
-      className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-xs flex min-h-full items-start sm:items-center justify-center p-3 sm:p-4 md:p-6"
+      className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-end sm:items-center justify-center sm:p-4 md:p-6"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
         id="task-editor-modal-container"
-        className={`relative w-full max-w-2xl rounded-3xl border p-4 sm:p-7 shadow-2xl my-3 sm:my-8 transition-all ${
+        className={`relative w-full sm:max-w-2xl h-[92dvh] sm:h-auto sm:max-h-[90vh] rounded-t-3xl sm:rounded-3xl border flex flex-col shadow-2xl transition-all ${
           isDark ? 'bg-[#1E293B] border-slate-700/60 text-slate-100' : 'bg-[#FFFFFF] border-slate-200 text-slate-900'
         }`}
       >
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b mb-5" style={{ borderColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(226, 232, 240, 0.9)' }}>
+        <div className="shrink-0 flex items-center justify-between p-4 sm:p-7 pb-4 border-b" style={{ borderColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(226, 232, 240, 0.9)' }}>
           <div className="flex items-center gap-2.5">
             <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold shadow-md"
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold shadow-md shrink-0"
               style={{ backgroundColor: categoryColor }}
             >
               <BookOpen className="w-5 h-5" />
@@ -280,7 +290,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className={`p-2 rounded-xl cursor-pointer ${
+            className={`p-2 rounded-xl cursor-pointer shrink-0 ${
               isDark ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
             }`}
           >
@@ -288,14 +298,76 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
           </button>
         </div>
 
-        {errorMsg && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-500 text-xs flex items-center gap-2 font-medium">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{errorMsg}</span>
-          </div>
-        )}
+        <form onSubmit={handleSubmit} className="flex-1 min-h-0 flex flex-col">
+          {/* Tabs + compact identity strip (always visible, above the scrollable area) */}
+          <div className="shrink-0 px-4 sm:px-7 pt-4 space-y-2.5">
+            {errorMsg && (
+              <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-500 text-xs flex items-center gap-2 font-medium">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
 
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs sm:text-sm">
+            <div className={`grid grid-cols-2 gap-1.5 p-1 rounded-xl border ${isDark ? 'bg-slate-900/60 border-slate-700/60' : 'bg-slate-100 border-slate-200'}`}>
+              <button
+                type="button"
+                onClick={() => setActiveTab('identity')}
+                className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  activeTab === 'identity' ? 'text-white shadow-xs' : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+                }`}
+                style={activeTab === 'identity' ? { backgroundColor: pal.previewColor } : {}}
+              >
+                <Tag className="w-3.5 h-3.5" />
+                <span>Identificação</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('notes')}
+                className={`flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  activeTab === 'notes' ? 'text-white shadow-xs' : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+                }`}
+                style={activeTab === 'notes' ? { backgroundColor: pal.previewColor } : {}}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Resumo & Anotações</span>
+              </button>
+            </div>
+
+            <div
+              className={`flex items-center gap-x-2 gap-y-1 flex-wrap p-2.5 rounded-xl border text-[11px] sm:text-xs ${
+                isDark ? 'bg-slate-900/50 border-slate-700/50 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'
+              }`}
+            >
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: categoryColor }} />
+              <span className="font-bold" style={{ color: pal.previewColor }}>{identityLabel}</span>
+              <span className="opacity-40">•</span>
+              <span className="font-semibold truncate max-w-[10rem] sm:max-w-none">{title || 'Sem título'}</span>
+              <span className="opacity-40 hidden sm:inline">•</span>
+              <span className="hidden sm:flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                {date}
+              </span>
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {timeLabel}
+              </span>
+              <button
+                type="button"
+                onClick={() => setActiveTab('identity')}
+                title="Editar identificação"
+                className={`ml-auto p-1.5 rounded-lg cursor-pointer transition-colors ${
+                  isDark ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200'
+                }`}
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Scrollable tab content */}
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-7 py-4 text-xs sm:text-sm">
+          {activeTab === 'identity' && (
+          <div className="space-y-4">
           {/* Title */}
           <div>
             <label className={`block font-semibold mb-1.5 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
@@ -630,7 +702,11 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
               </div>
             )}
           </div>
+          </div>
+          )}
 
+          {activeTab === 'notes' && (
+          <div className="flex flex-col">
           {/* Rich Notes / Summary block & Image uploads */}
           <div className="pt-2">
             <div className="flex items-center justify-between mb-1.5">
@@ -706,10 +782,13 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
               </div>
             )}
           </div>
+          </div>
+          )}
+          </div>
 
           {/* Footer Actions */}
           <div
-            className="flex items-center justify-between pt-4 border-t mt-4"
+            className="shrink-0 flex items-center justify-between p-4 sm:p-7 pt-4 border-t"
             style={{ borderColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(226, 232, 240, 0.9)' }}
           >
             {task?.id && onDelete ? (

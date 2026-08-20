@@ -13,8 +13,9 @@ import {
 } from 'lucide-react';
 import { ColorPalette, ThemeMode, UserProfile } from '../types';
 import { COLOR_PALETTES } from '../lib/theme';
-import { StoredUserAccount } from '../lib/storage';
+import { StoredUserAccount, DataService } from '../lib/storage';
 import { SupabaseSyncService } from '../lib/supabaseSync';
+import { hashPassword, verifyPassword, isBcryptHash } from '../lib/passwordUtils';
 
 interface AuthViewProps {
   onLoginSuccess: (userId: string, account: StoredUserAccount, profile?: UserProfile) => void;
@@ -84,13 +85,14 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
         const userId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         const initialAvatar = generateInitialAvatar(name, pal.previewColor);
+        const hashedPassword = await hashPassword(password);
 
         // 1. Create Stored User Account
         const newAccount: StoredUserAccount = {
           id: userId,
           name: name.trim(),
           email: `${name.trim().toLowerCase().replace(/\s+/g, '.')}@estudotrack.local`,
-          passwordHash: password,
+          passwordHash: hashedPassword,
           avatar: initialAvatar,
           courseOrGoal: '',
           createdAt: new Date().toISOString(),
@@ -112,7 +114,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         };
 
         // 3. Sync profile in background
-        await SupabaseSyncService.syncProfile(newProfile, password);
+        await SupabaseSyncService.syncProfile(newProfile, hashedPassword);
 
         setSuccessMessage('Conta criada com sucesso! Entrando...');
         setTimeout(() => {
@@ -134,13 +136,27 @@ export const AuthView: React.FC<AuthViewProps> = ({
         const cleanName = name.trim().toLowerCase();
 
         // 1. First check in saved local accounts
-        const localFound = savedAccounts.find(
-          (u) =>
-            u.name.trim().toLowerCase() === cleanName &&
-            (u.passwordHash === password || !u.passwordHash)
-        );
+        const localFound = savedAccounts.find((u) => u.name.trim().toLowerCase() === cleanName);
 
         if (localFound) {
+          const passwordOk = await verifyPassword(password, localFound.passwordHash);
+          if (!passwordOk) {
+            setErrorMessage('Senha incorreta para este usuário.');
+            setIsLoading(false);
+            return;
+          }
+
+          // Transparently upgrade legacy plaintext passwords to a bcrypt hash
+          if (localFound.passwordHash && !isBcryptHash(localFound.passwordHash)) {
+            const newHash = await hashPassword(password);
+            const users = DataService.getUsers().map((u) =>
+              u.id === localFound.id ? { ...u, passwordHash: newHash } : u
+            );
+            DataService.saveUsers(users);
+            SupabaseSyncService.updatePasswordHash(localFound.id, newHash);
+            localFound.passwordHash = newHash;
+          }
+
           const remoteProfile = await SupabaseSyncService.fetchProfile(localFound.id);
           setSuccessMessage('Login efetuado com sucesso!');
           setTimeout(() => {
@@ -152,18 +168,25 @@ export const AuthView: React.FC<AuthViewProps> = ({
         // 2. Search in remote profile table directly
         const remoteProfile = await SupabaseSyncService.searchProfileByName(cleanName);
         if (remoteProfile) {
-          // Verify password if stored
-          if (remoteProfile.passwordHash && remoteProfile.passwordHash !== password) {
+          const passwordOk = await verifyPassword(password, remoteProfile.passwordHash);
+          if (!passwordOk) {
             setErrorMessage('Senha incorreta para este usuário.');
             setIsLoading(false);
             return;
+          }
+
+          // Transparently upgrade legacy plaintext passwords to a bcrypt hash
+          let finalHash = remoteProfile.passwordHash || '';
+          if (finalHash && !isBcryptHash(finalHash)) {
+            finalHash = await hashPassword(password);
+            SupabaseSyncService.updatePasswordHash(remoteProfile.id, finalHash);
           }
 
           const accountFromSupabase: StoredUserAccount = {
             id: remoteProfile.id,
             name: remoteProfile.name,
             email: remoteProfile.email,
-            passwordHash: password,
+            passwordHash: finalHash,
             avatar: remoteProfile.avatar || generateInitialAvatar(remoteProfile.name, pal.previewColor),
             courseOrGoal: remoteProfile.courseOrGoal || '',
             createdAt: remoteProfile.createdAt,

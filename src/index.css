@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.2s ease-out;
+}
+
 /* Rich note content — shared between the Tiptap editor and the read-only card preview */
 .rich-note-content {
   outline: none;

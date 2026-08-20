@@ -281,6 +281,15 @@ export class SupabaseSyncService {
     }
   }
 
+  static async updatePasswordHash(userId: string, newHash: string): Promise<void> {
+    if (!isSupabaseConfigured()) return;
+    try {
+      await supabase.from('profiles').update({ password_hash: newHash }).eq('id', userId);
+    } catch (err) {
+      console.warn('[Supabase updatePasswordHash error]', err);
+    }
+  }
+
   static async fetchProfile(userId: string): Promise<UserProfile | null> {
     if (!isSupabaseConfigured()) return null;
     try {

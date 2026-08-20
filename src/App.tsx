@@ -20,6 +20,7 @@ import { COLOR_PALETTES, getThemeClasses } from './lib/theme';
 import { calculateNextSpacedReviewDate, formatDateToISO, getBrasiliaDate } from './lib/dateUtils';
 import { INITIAL_RANKING_PEERS } from './lib/gamification';
 import { SupabaseSyncService } from './lib/supabaseSync';
+import { hashPassword, verifyPassword, isBcryptHash } from './lib/passwordUtils';
 
 import { Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
@@ -32,6 +33,7 @@ import { TaskEditorModal } from './components/TaskEditorModal';
 import { WeeklyStatsModal } from './components/WeeklyStatsModal';
 import { AuthModal } from './components/AuthModal';
 import { AuthView } from './components/AuthView';
+import { Toast, ToastData } from './components/Toast';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
@@ -87,6 +89,7 @@ export default function App() {
   const [isTaskEditorOpen, setIsTaskEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Partial<StudyTask> | null>(null);
   const [taskInitialDate, setTaskInitialDate] = useState<string | undefined>(undefined);
+  const [toast, setToast] = useState<ToastData | null>(null);
 
   const [isStatsOpen, setIsStatsOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -280,6 +283,7 @@ export default function App() {
       setTasks(updatedList);
       DataService.saveTasks(updatedList, currentUserAccount.id);
       DataService.addAuditLog('Edição de Tarefa', `Atualizou o card "${taskData.title}"`, currentUserAccount.id);
+      setToast({ message: `Alterações em "${taskData.title}" salvas!`, type: 'success' });
     } else {
       // Create new
       const newTask: StudyTask = {
@@ -294,6 +298,7 @@ export default function App() {
       SupabaseSyncService.syncTask(newTask);
       awardXP(25, `Criação do card "${newTask.title}"`);
       DataService.addAuditLog('Criação de Tarefa', `Criou o card de estudos "${newTask.title}"`, currentUserAccount.id);
+      setToast({ message: `Card "${newTask.title}" criado com sucesso!`, type: 'success' });
     }
     setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
   };
@@ -307,6 +312,7 @@ export default function App() {
     if (target) {
       DataService.addAuditLog('Exclusão de Tarefa', `Removeu o card "${target.title}"`, currentUserAccount.id);
       setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
+      setToast({ message: `Card "${target.title}" excluído.`, type: 'delete' });
     }
   };
 
@@ -479,15 +485,25 @@ export default function App() {
   };
 
   // 6. Multi-user Auth Handlers
-  const handleLogin = (usernameOrEmail: string, pass: string): boolean => {
+  const handleLogin = async (usernameOrEmail: string, pass: string): Promise<boolean> => {
     const found = DataService.findUserByName(usernameOrEmail);
-    if (found) {
-      DataService.setAuthenticatedUserId(found.id);
-      setIsAuthenticated(true);
-      reloadUserData(found.id);
-      return true;
+    if (!found) return false;
+
+    const passwordOk = await verifyPassword(pass, found.passwordHash);
+    if (!passwordOk) return false;
+
+    // Transparently upgrade legacy plaintext passwords to a bcrypt hash
+    if (found.passwordHash && !isBcryptHash(found.passwordHash)) {
+      const newHash = await hashPassword(pass);
+      const users = DataService.getUsers().map((u) => (u.id === found.id ? { ...u, passwordHash: newHash } : u));
+      DataService.saveUsers(users);
+      SupabaseSyncService.updatePasswordHash(found.id, newHash);
     }
-    return false;
+
+    DataService.setAuthenticatedUserId(found.id);
+    setIsAuthenticated(true);
+    reloadUserData(found.id);
+    return true;
   };
 
   const handleRegister = async (name: string, email: string, pass: string, course: string) => {
@@ -496,7 +512,7 @@ export default function App() {
       id: newUserId,
       name,
       email: email || `${name.trim().toLowerCase().replace(/\s+/g, '.')}@estudotrack.local`,
-      passwordHash: pass,
+      passwordHash: await hashPassword(pass),
       avatar: '',
       courseOrGoal: course,
       createdAt: new Date().toISOString(),
@@ -611,6 +627,8 @@ export default function App() {
       id="estudatrack-app-root"
       className={`min-h-screen flex flex-col md:flex-row transition-colors duration-200 ${themeClasses.bg} font-sans`}
     >
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
+
       {/* Desktop Left Sidebar */}
       <Sidebar
         currentTab={activeTab}

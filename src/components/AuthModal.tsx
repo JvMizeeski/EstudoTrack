@@ -20,7 +20,7 @@ interface AuthModalProps {
   onClose: () => void;
   currentUser: UserProfile;
   availableUsers: StoredUserAccount[];
-  onLogin: (email: string, pass: string) => boolean;
+  onLogin: (email: string, pass: string) => Promise<boolean>;
   onRegister: (name: string, email: string, pass: string, course: string) => void;
   onSwitchUser: (userId: string) => void;
   colorPalette: ColorPalette;
@@ -59,12 +59,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
     if (mode === 'login') {
-      const success = onLogin(email.trim(), password);
+      const success = await onLogin(email.trim(), password);
       if (success) {
         onClose();
       } else {
