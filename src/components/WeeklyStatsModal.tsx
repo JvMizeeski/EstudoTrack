@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   X,
   TrendingUp,
@@ -37,6 +37,15 @@ export const WeeklyStatsModal: React.FC<WeeklyStatsModalProps> = ({
 }) => {
   const isDark = themeMode === 'dark';
   const pal = COLOR_PALETTES[colorPalette] || COLOR_PALETTES.purple;
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -95,14 +104,14 @@ export const WeeklyStatsModal: React.FC<WeeklyStatsModalProps> = ({
   return (
     <div
       id="weekly-stats-modal-overlay"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto"
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-xs flex min-h-full items-start sm:items-center justify-center p-3 sm:p-4 md:p-6"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
         id="weekly-stats-container"
-        className={`relative w-full max-w-3xl rounded-3xl border p-6 sm:p-7 shadow-2xl my-8 transition-all ${
+        className={`relative w-full max-w-3xl rounded-3xl border p-5 sm:p-7 shadow-2xl my-3 sm:my-8 transition-all ${
           isDark ? 'bg-[#1E293B] border-slate-700/60 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
         }`}
       >
@@ -116,15 +125,17 @@ export const WeeklyStatsModal: React.FC<WeeklyStatsModalProps> = ({
               <BarChart3 className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-bold text-lg text-slate-100">Relatório de Desempenho Semanal</h2>
-              <p className="text-xs text-slate-400">
+              <h2 className={`font-bold text-lg ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Relatório de Desempenho Semanal</h2>
+              <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                 Estatísticas consolidadas e análise de rendimento acadêmico
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800 cursor-pointer"
+            className={`p-2 rounded-xl cursor-pointer ${
+              isDark ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+            }`}
           >
             <X className="w-5 h-5" />
           </button>
@@ -272,19 +283,6 @@ export const WeeklyStatsModal: React.FC<WeeklyStatsModalProps> = ({
               })}
             </div>
           )}
-        </div>
-
-        {/* Academic Insights Box */}
-        <div className="p-4 rounded-2xl bg-purple-600/10 border border-purple-500/20 text-xs leading-relaxed flex items-start gap-3">
-          <div className="p-2 rounded-xl bg-purple-600/20 text-purple-300 shrink-0">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <div>
-            <h4 className="font-bold text-purple-300 text-sm mb-0.5">Diagnóstico de Performance</h4>
-            <p className="text-slate-300">
-              Excelente consistência! Você está cobrindo tópicos fundamentais e mantendo um ritmo sustentável. Lembre-se de realizar as revisões agendadas nas primeiras 24 horas para garantir que o conhecimento passe para a memória de longo prazo.
-            </p>
-          </div>
         </div>
 
         {/* Footer */}

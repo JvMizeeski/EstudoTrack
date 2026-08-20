@@ -90,6 +90,23 @@ export default function App() {
 
   const [isStatsOpen, setIsStatsOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('estudatrack_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleSidebarCollapse = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('estudatrack_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Sync state whenever active user changes
   const reloadUserData = (userId: string) => {
@@ -613,6 +630,8 @@ export default function App() {
         themeMode={settings.themeMode}
         unreadNotificationsCount={unreadCount}
         isRealtimeActive={isRealtimeActive}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapse={handleToggleSidebarCollapse}
       />
 
       {/* Main App Content Viewport */}
@@ -638,7 +657,12 @@ export default function App() {
         />
 
         {/* Primary Main Content Area */}
-        <main id="app-main-viewport" className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 pb-24 md:pb-12">
+        <main
+          id="app-main-viewport"
+          className={`flex-1 w-full mx-auto p-4 sm:p-6 lg:p-8 pb-24 md:pb-12 transition-all duration-300 ${
+            isSidebarCollapsed ? 'max-w-[1700px]' : 'max-w-7xl'
+          }`}
+        >
           {activeTab === 'agenda' && (
             <AgendaView
               tasks={tasks}

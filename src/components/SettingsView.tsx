@@ -136,7 +136,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   return (
-    <div id="settings-view-container" className="max-w-4xl mx-auto space-y-6 pb-12">
+    <div id="settings-view-container" className="max-w-4xl mx-auto space-y-7 sm:space-y-8 pb-16">
       {/* Header */}
       <div>
         <h1 className={`text-xl sm:text-2xl font-bold tracking-tight ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
@@ -282,20 +282,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
         }`}
       >
-        <div className="flex items-center justify-between pb-4 border-b mb-5" style={{ borderColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(226, 232, 240, 0.9)' }}>
-          <div className="flex items-center gap-2.5">
-            <Palette className="w-5 h-5" style={{ color: currentPal.previewColor }} />
-            <div>
-              <h2 className={`font-bold text-base ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Aparência & Paletas de Cores</h2>
-              <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Personalize o visual e a atmosfera de estudos com visualização instantânea</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-4 border-b mb-5" style={{ borderColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(226, 232, 240, 0.9)' }}>
+          <div className="flex items-center gap-2.5 w-full sm:w-auto">
+            <Palette className="w-5 h-5 shrink-0" style={{ color: currentPal.previewColor }} />
+            <div className="w-full">
+              <h2 className={`font-bold text-base w-full ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Aparência & Paletas de Cores</h2>
+              <p className={`hidden sm:block text-xs ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Personalize o visual e a atmosfera de estudos com visualização instantânea</p>
             </div>
           </div>
 
           <button
             type="button"
             onClick={onResetSettingsToDefault}
-            className={`flex items-center gap-1 text-xs cursor-pointer ${
-              isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+            className={`flex items-center justify-center sm:justify-start gap-1 text-xs cursor-pointer py-1 px-2.5 sm:p-0 rounded-lg sm:rounded-none w-full sm:w-auto ${
+              isDark ? 'bg-slate-800 sm:bg-transparent text-slate-300 hover:text-slate-100' : 'bg-slate-100 sm:bg-transparent text-slate-700 hover:text-slate-900'
             }`}
             title="Restaurar padrões de fábrica"
           >
@@ -341,14 +341,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           {/* 4 Pre-defined Color Palettes */}
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className={`font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                Paletas de Cores de Destaque
-              </label>
-              <span className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Aplica imediatamente em todo o app
-              </span>
-            </div>
+            <label className={`block font-semibold mb-2 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+              Paletas de Cores de Destaque
+            </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {(['purple', 'emerald', 'indigo', 'amber'] as ColorPalette[]).map((palKey) => {
                 const p = COLOR_PALETTES[palKey];
@@ -379,15 +374,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       >
                         {isSelected && <Check className="w-4 h-4 stroke-[3]" />}
                       </div>
-                      <div>
-                        <p className={`font-bold text-xs ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{p.name}</p>
-                        <p className={`text-[10px] leading-tight ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{p.description}</p>
-                      </div>
+                      <p className={`font-bold text-xs sm:text-sm ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{p.name}</p>
                     </div>
 
-                    <div className="flex gap-1 shrink-0">
-                      <span className="w-3.5 h-3.5 rounded-full shadow-xs" style={{ backgroundColor: p.previewColor }} />
-                      <span className="w-3.5 h-3.5 rounded-full shadow-xs" style={{ backgroundColor: p.previewSecondary }} />
+                    <div className="flex gap-1.5 shrink-0">
+                      <span className="w-4 h-4 rounded-full shadow-xs" style={{ backgroundColor: p.previewColor }} />
+                      <span className="w-4 h-4 rounded-full shadow-xs" style={{ backgroundColor: p.previewSecondary }} />
                     </div>
                   </div>
                 );

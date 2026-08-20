@@ -78,6 +78,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      document.body.style.overflow = 'hidden';
       const loaded = DataService.getSubjects();
       setSubjectList(loaded);
       setTitle(task?.title || '');
@@ -90,7 +91,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
       setRecurrenceDays(task?.recurrenceDays || [1, 3, 5]);
       setNotes(task?.notes || '');
       setImages(task?.images || []);
-      setReviewScheduled(task?.reviewScheduled ?? true);
+      setReviewScheduled(task?.reviewScheduled ?? false);
       setPriority(task?.priority || 'medium');
       setTags(task?.tags || []);
       setErrorMsg('');
@@ -108,6 +109,10 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
         setSelectedSubject('');
         setCategoryColor('#3b82f6');
       }
+
+      return () => {
+        document.body.style.overflow = '';
+      };
     }
   }, [isOpen, task, defaultDate]);
 
@@ -237,14 +242,14 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
   return (
     <div
       id="task-editor-modal-overlay"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs overflow-y-auto"
+      className="fixed inset-0 z-50 overflow-y-auto bg-black/75 backdrop-blur-xs flex min-h-full items-start sm:items-center justify-center p-3 sm:p-4 md:p-6"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
         id="task-editor-modal-container"
-        className={`relative w-full max-w-2xl rounded-3xl border p-5 sm:p-7 shadow-2xl my-8 transition-all ${
+        className={`relative w-full max-w-2xl rounded-3xl border p-4 sm:p-7 shadow-2xl my-3 sm:my-8 transition-all ${
           isDark ? 'bg-[#1E293B] border-slate-700/60 text-slate-100' : 'bg-[#FFFFFF] border-slate-200 text-slate-900'
         }`}
       >
@@ -693,44 +698,6 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                 </div>
               </div>
             )}
-          </div>
-
-          {/* Spaced Repetition Toggle */}
-          <div
-            className={`p-3 rounded-xl border flex items-center justify-between ${
-              isDark ? 'bg-slate-900/40 border-slate-700/60' : 'bg-slate-50 border-slate-200'
-            }`}
-            style={reviewScheduled ? {
-              borderColor: `${pal.previewColor}60`,
-              backgroundColor: `${pal.previewColor}12`,
-            } : {}}
-          >
-            <div className="flex items-center gap-2.5">
-              <div
-                className="p-2 rounded-lg"
-                style={{
-                  backgroundColor: `${pal.previewColor}20`,
-                  color: pal.previewColor,
-                }}
-              >
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <div>
-                <p className={`font-semibold text-xs ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
-                  Programar Revisões Automáticas (Curva de Esquecimento)
-                </p>
-                <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Gera lembretes espaçados (24h, 7 dias e 30 dias) para maximizar a retenção
-                </p>
-              </div>
-            </div>
-            <input
-              type="checkbox"
-              checked={reviewScheduled}
-              onChange={(e) => setReviewScheduled(e.target.checked)}
-              className="w-4 h-4 rounded cursor-pointer"
-              style={{ accentColor: pal.previewColor }}
-            />
           </div>
 
           {/* Footer Actions */}

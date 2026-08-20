@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   BookOpen,
   Film,
@@ -51,6 +51,15 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<LibraryItem | null>(null);
+
+  useEffect(() => {
+    if (isModalOpen) {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
+  }, [isModalOpen]);
 
   // Form State inside Modal
   const [title, setTitle] = useState('');
@@ -200,12 +209,12 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         <div className="space-y-1.5 max-w-xl">
           <div className="flex items-center gap-2">
             <div
-              className="p-2.5 rounded-2xl text-white shadow-md font-bold"
+              className="p-2 sm:p-2.5 rounded-2xl text-white shadow-md font-bold shrink-0"
               style={{ backgroundColor: pal.previewColor }}
             >
-              <BookOpen className="w-5 h-5" />
+              <BookOpen className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-100">
+            <h1 className={`text-base sm:text-lg md:text-xl font-extrabold tracking-tight whitespace-nowrap truncate ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
               Biblioteca & Acervo de Estudos
             </h1>
           </div>
@@ -217,7 +226,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
         <button
           id="add-media-item-btn"
           onClick={openCreateModal}
-          className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold text-white shadow-lg transition-transform hover:scale-105 cursor-pointer self-start md:self-auto"
+          className="w-full md:w-auto flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-xs font-bold text-white shadow-lg transition-transform hover:scale-[1.02] cursor-pointer shrink-0"
           style={{ backgroundColor: pal.previewColor }}
         >
           <Plus className="w-4 h-4" />
@@ -228,7 +237,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       {/* Filter and Search Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         {/* Type Tabs */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {[
             { id: 'all', label: 'Todos' },
             { id: 'book', label: 'Livros' },
@@ -430,13 +439,13 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
       {/* Add / Edit Library Item Modal */}
       {isModalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto"
+          className="fixed inset-0 z-50 overflow-y-auto bg-black/80 backdrop-blur-xs flex min-h-full items-start sm:items-center justify-center p-3 sm:p-4 md:p-6"
           onClick={(e) => {
             if (e.target === e.currentTarget) setIsModalOpen(false);
           }}
         >
           <div
-            className={`relative w-full max-w-xl rounded-3xl border p-6 sm:p-7 shadow-2xl my-8 transition-all ${
+            className={`relative w-full max-w-xl rounded-3xl border p-5 sm:p-7 shadow-2xl my-3 sm:my-8 transition-all ${
               isDark ? 'bg-[#0F172A] border-slate-700 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
             }`}
           >

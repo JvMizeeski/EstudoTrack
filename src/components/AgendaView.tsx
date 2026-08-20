@@ -193,24 +193,27 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
         }`}
       >
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          {/* Left: Simple Header & Date */}
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <CalendarIcon className="w-5 h-5 shrink-0" style={{ color: pal.previewColor }} />
-              <h1 className={`text-lg sm:text-xl font-black tracking-tight ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                Resumo de Hoje
-              </h1>
+          {/* Left: Date Tag above + Single Line Resumo de Hoje Title + Subtitle */}
+          <div className="space-y-1 min-w-0">
+            {/* Tag de data pequeno acima em linha única */}
+            <div className="flex items-center">
               <span
-                className="text-xs font-semibold px-2.5 py-0.5 rounded-full"
+                className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full inline-flex items-center gap-1.5"
                 style={{
-                  backgroundColor: `${pal.previewColor}20`,
+                  backgroundColor: `${pal.previewColor}18`,
                   color: pal.previewColor,
-                  border: `1px solid ${pal.previewColor}40`,
+                  border: `1px solid ${pal.previewColor}35`,
                 }}
               >
-                {formatBrasiliaDisplayDate(todayIso)}
+                <CalendarIcon className="w-3 h-3 shrink-0" style={{ color: pal.previewColor }} />
+                <span>{formatBrasiliaDisplayDate(todayIso)}</span>
               </span>
             </div>
+
+            <h1 className={`text-lg sm:text-xl font-black tracking-tight whitespace-nowrap truncate ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+              Resumo de Hoje
+            </h1>
+
             <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
               {todayTasks.length === 0
                 ? 'Nenhum bloco de estudo agendado para hoje.'
@@ -218,73 +221,85 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
             </p>
           </div>
 
-          {/* Right: Meta do Dia, Estatísticas & Criar Card */}
-          <div className="flex items-center flex-wrap gap-3">
-            {/* Meta do Dia Progress */}
-            <div className={`flex items-center gap-2.5 px-3 py-1.5 rounded-2xl border ${
+          {/* Right: Meta do Dia (bloco único com largura máxima no mobile) e abaixo os 2 botões 50/50 de mesma altura */}
+          <div className="flex flex-col gap-2.5 w-full md:w-auto shrink-0">
+            {/* Meta do Dia Progress (bloco único na largura máxima) */}
+            <div className={`w-full flex items-center justify-between md:justify-start gap-3 px-3.5 py-2 rounded-2xl border ${
               isDark ? 'bg-slate-800/80 border-slate-700/70' : 'bg-slate-50 border-slate-200'
             }`}>
-              <div className="relative w-8 h-8 flex items-center justify-center">
-                <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
-                  <circle
-                    cx="18"
-                    cy="18"
-                    r="14"
-                    fill="none"
-                    stroke={isDark ? '#334155' : '#e2e8f0'}
-                    strokeWidth="3.5"
-                  />
-                  <circle
-                    cx="18"
-                    cy="18"
-                    r="14"
-                    fill="none"
-                    stroke={pal.previewColor}
-                    strokeWidth="3.5"
-                    strokeDasharray="88"
-                    strokeDashoffset={88 - (88 * todayProgressPercent) / 100}
-                    strokeLinecap="round"
-                    className="transition-all duration-500"
-                  />
-                </svg>
-                <span className={`absolute text-[10px] font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                  {todayProgressPercent}%
-                </span>
+              <div className="flex items-center gap-3">
+                <div className="relative w-8 h-8 flex items-center justify-center shrink-0">
+                  <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke={isDark ? '#334155' : '#e2e8f0'}
+                      strokeWidth="3.5"
+                    />
+                    <circle
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      fill="none"
+                      stroke={pal.previewColor}
+                      strokeWidth="3.5"
+                      strokeDasharray="88"
+                      strokeDashoffset={88 - (88 * todayProgressPercent) / 100}
+                      strokeLinecap="round"
+                      className="transition-all duration-500"
+                    />
+                  </svg>
+                  <span className={`absolute text-[10px] font-bold ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                    {todayProgressPercent}%
+                  </span>
+                </div>
+                <div className="text-left">
+                  <p className={`text-[11px] font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>Meta do Dia</p>
+                  <p className={`text-[10px] font-medium ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                    {todayCompletedCount}/{todayTasks.length} concluídos
+                  </p>
+                </div>
               </div>
-              <div className="text-left pr-1">
-                <p className={`text-[11px] font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>Meta do Dia</p>
-                <p className={`text-[10px] font-medium ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                  {todayCompletedCount}/{todayTasks.length} concluídos
-                </p>
-              </div>
+
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                todayProgressPercent === 100
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : isDark ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {todayProgressPercent === 100 ? 'Meta atingida!' : `${todayTotalMinutes - todayCompletedMinutes > 0 ? formatDuration(todayTotalMinutes - todayCompletedMinutes) + ' restantes' : 'Em andamento'}`}
+              </span>
             </div>
 
-            {/* Quick Action Buttons */}
-            <button
-              id="view-stats-btn"
-              type="button"
-              onClick={onOpenStats}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-2xl text-xs font-semibold border transition-all cursor-pointer ${
-                isDark
-                  ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
-                  : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
-              }`}
-              title="Abrir Estatísticas Detalhadas"
-            >
-              <BarChart3 className="w-3.5 h-3.5" style={{ color: pal.previewColor }} />
-              <span>Estatísticas</span>
-            </button>
+            {/* Quick Action Buttons: Criar Card e Estatísticas 50/50 com mesma altura */}
+            <div className="grid grid-cols-2 gap-2.5 w-full">
+              <button
+                id="quick-add-task-btn"
+                type="button"
+                onClick={() => onAddTask(todayIso)}
+                className="h-10 flex items-center justify-center gap-1.5 px-3 rounded-2xl text-xs font-bold text-white shadow-md transition-transform hover:scale-[1.02] cursor-pointer"
+                style={{ backgroundColor: pal.previewColor }}
+              >
+                <Plus className="w-4 h-4 shrink-0" />
+                <span>Criar Card</span>
+              </button>
 
-            <button
-              id="quick-add-task-btn"
-              type="button"
-              onClick={() => onAddTask(todayIso)}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-bold text-white shadow-md transition-transform hover:scale-[1.02] cursor-pointer"
-              style={{ backgroundColor: pal.previewColor }}
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Criar Card</span>
-            </button>
+              <button
+                id="view-stats-btn"
+                type="button"
+                onClick={onOpenStats}
+                className={`h-10 flex items-center justify-center gap-1.5 px-3 rounded-2xl text-xs font-semibold border transition-all cursor-pointer ${
+                  isDark
+                    ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
+                    : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
+                }`}
+                title="Abrir Estatísticas Detalhadas"
+              >
+                <BarChart3 className="w-4 h-4 shrink-0" style={{ color: pal.previewColor }} />
+                <span>Estatísticas</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -345,17 +360,17 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
       </section>
 
       {/* 2. CALENDAR CONTROLS & FILTER BAR */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* View mode toggle (Dia / Semana / Mês) */}
-        <div className="flex items-center gap-2">
-          <div className={`flex items-center p-1 rounded-2xl border text-xs font-semibold ${
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 w-full">
+        {/* Row 1: View mode toggle (Dia / Semana / Mês) + Hoje - Full width on mobile */}
+        <div className="flex items-center gap-2 w-full lg:w-auto">
+          <div className={`grid grid-cols-3 flex-1 lg:flex lg:flex-none items-center p-1 rounded-2xl border text-xs font-semibold ${
             isDark ? 'bg-slate-800/80 border-slate-700/60' : 'bg-slate-100 border-slate-300'
           }`}>
             <button
               id="view-day-btn"
               type="button"
               onClick={() => setCurrentView('day')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+              className={`py-1.5 px-3 text-center rounded-xl transition-all cursor-pointer ${
                 currentView === 'day'
                   ? 'text-white shadow-xs font-bold'
                   : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-700 hover:text-slate-900'
@@ -368,7 +383,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               id="view-week-btn"
               type="button"
               onClick={() => setCurrentView('week')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+              className={`py-1.5 px-3 text-center rounded-xl transition-all cursor-pointer ${
                 currentView === 'week'
                   ? 'text-white shadow-xs font-bold'
                   : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-700 hover:text-slate-900'
@@ -381,7 +396,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               id="view-month-btn"
               type="button"
               onClick={() => setCurrentView('month')}
-              className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+              className={`py-1.5 px-3 text-center rounded-xl transition-all cursor-pointer ${
                 currentView === 'month'
                   ? 'text-white shadow-xs font-bold'
                   : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-700 hover:text-slate-900'
@@ -395,7 +410,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           <button
             type="button"
             onClick={handleJumpToToday}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border cursor-pointer ${
+            className={`px-3.5 py-2.5 lg:py-1.5 rounded-xl text-xs font-semibold border cursor-pointer shrink-0 ${
               isDark
                 ? 'border-slate-700 bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'
                 : 'border-slate-300 bg-white text-slate-700 hover:text-slate-900 hover:bg-slate-100'
@@ -405,12 +420,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           </button>
         </div>
 
-        {/* Date Navigator Arrows & Label */}
-        <div className="flex items-center gap-2.5">
+        {/* Row 2: Date Navigator Arrows & Label - Full Width on mobile */}
+        <div className={`flex items-center justify-between gap-2 w-full lg:w-auto p-1 lg:p-0 rounded-2xl lg:rounded-none ${
+          isDark ? 'bg-slate-800/40 lg:bg-transparent' : 'bg-slate-50 lg:bg-transparent'
+        }`}>
           <button
             type="button"
             onClick={handlePrev}
-            className={`p-2 rounded-xl border cursor-pointer ${
+            className={`p-2 rounded-xl border cursor-pointer shrink-0 ${
               isDark ? 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
             }`}
             title="Anterior"
@@ -418,7 +435,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          <span className={`text-xs sm:text-sm font-bold min-w-[160px] text-center ${isDark ? 'text-slate-200' : 'text-slate-900'}`}>
+          <span className={`text-xs sm:text-sm font-bold flex-1 text-center truncate px-2 ${isDark ? 'text-slate-200' : 'text-slate-900'}`}>
             {currentView === 'day' && formatBrasiliaDisplayDate(selectedDateIso)}
             {currentView === 'week' && `Semana de ${formatShortDate(weekDays[0].iso)} a ${formatShortDate(weekDays[6].iso)}`}
             {currentView === 'month' && `${monthNames[currentMonthIndex]} de ${currentYear}`}
@@ -427,7 +444,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           <button
             type="button"
             onClick={handleNext}
-            className={`p-2 rounded-xl border cursor-pointer ${
+            className={`p-2 rounded-xl border cursor-pointer shrink-0 ${
               isDark ? 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-100'
             }`}
             title="Próximo"
@@ -436,12 +453,12 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           </button>
         </div>
 
-        {/* Filters: Subject dropdown & Search */}
-        <div className="flex items-center gap-2">
+        {/* Row 3: Filters: Subject dropdown - Full width on mobile */}
+        <div className="w-full lg:w-auto">
           <select
             value={selectedSubjectFilter || 'all'}
             onChange={(e) => setSelectedSubjectFilter(e.target.value)}
-            className={`px-3 py-1.5 rounded-xl text-xs border font-medium focus:outline-hidden ${
+            className={`w-full lg:w-auto px-3.5 py-2.5 lg:py-1.5 rounded-xl text-xs border font-medium focus:outline-hidden cursor-pointer ${
               isDark
                 ? 'bg-slate-800 border-slate-700 text-slate-200 focus:border-purple-500'
                 : 'bg-white border-slate-300 text-slate-900 focus:border-purple-500'
