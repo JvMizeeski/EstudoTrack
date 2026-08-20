@@ -25,6 +25,7 @@ import {
   ThemeMode,
 } from '../types';
 import { COLOR_PALETTES } from '../lib/theme';
+import { SupabaseSyncService } from '../lib/supabaseSync';
 
 interface LibraryViewProps {
   items: LibraryItem[];
@@ -33,6 +34,7 @@ interface LibraryViewProps {
   onDeleteItem: (id: string) => void;
   colorPalette: ColorPalette;
   themeMode: ThemeMode;
+  userId: string;
 }
 
 export const LibraryView: React.FC<LibraryViewProps> = ({
@@ -42,6 +44,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   onDeleteItem,
   colorPalette,
   themeMode,
+  userId,
 }) => {
   const isDark = themeMode === 'dark';
   const pal = COLOR_PALETTES[colorPalette] || COLOR_PALETTES.purple;
@@ -112,9 +115,16 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       const base64 = evt.target?.result as string;
-      if (base64) setCoverUrl(base64);
+      if (!base64) return;
+      // Show it immediately, then swap for the Supabase Storage URL once it
+      // uploads (falls back to the base64 itself if the upload fails).
+      setCoverUrl(base64);
+      const finalUrl = await SupabaseSyncService.uploadTaskImage(userId, base64);
+      if (finalUrl && finalUrl !== base64) {
+        setCoverUrl(finalUrl);
+      }
     };
     reader.readAsDataURL(file);
   };

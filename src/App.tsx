@@ -704,6 +704,7 @@ export default function App() {
               onDeleteItem={handleDeleteLibraryItem}
               colorPalette={activePalette}
               themeMode={settings.themeMode}
+              userId={currentUserAccount.id}
             />
           )}
 
