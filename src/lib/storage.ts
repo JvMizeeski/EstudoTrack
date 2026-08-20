@@ -77,6 +77,17 @@ export function getInitialSeedAudit(_userId: string): AuditLog[] {
 
 // Storage Access & Multi-user state handlers
 export class DataService {
+  // localStorage is a best-effort cache — Supabase is the source of truth for synced
+  // accounts. A quota-exceeded write (e.g. from accumulated base64 images) must never
+  // abort the caller's flow (Supabase sync, toasts, modal close, etc).
+  private static safeSetItem(key: string, value: string): void {
+    try {
+      localStorage.setItem(key, value);
+    } catch (err) {
+      console.warn(`[DataService] Failed to persist "${key}" to localStorage (quota exceeded?)`, err);
+    }
+  }
+
   static getAuthenticatedUserId(): string | null {
     try {
       return localStorage.getItem(STORAGE_KEYS.AUTHENTICATED_USER_ID);
@@ -88,8 +99,8 @@ export class DataService {
   static setAuthenticatedUserId(id: string | null): void {
     try {
       if (id) {
-        localStorage.setItem(STORAGE_KEYS.AUTHENTICATED_USER_ID, id);
-        localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, id);
+        this.safeSetItem(STORAGE_KEYS.AUTHENTICATED_USER_ID, id);
+        this.safeSetItem(STORAGE_KEYS.CURRENT_USER_ID, id);
       } else {
         localStorage.removeItem(STORAGE_KEYS.AUTHENTICATED_USER_ID);
       }
@@ -150,7 +161,7 @@ export class DataService {
   }
 
   static saveUsers(users: StoredUserAccount[]): void {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    this.safeSetItem(STORAGE_KEYS.USERS, JSON.stringify(users));
   }
 
   static getCurrentUserId(): string {
@@ -158,12 +169,12 @@ export class DataService {
     if (current) return current;
     const users = this.getUsers();
     const id = users[0]?.id || 'user-default-1';
-    localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, id);
+    this.safeSetItem(STORAGE_KEYS.CURRENT_USER_ID, id);
     return id;
   }
 
   static setCurrentUserId(id: string): void {
-    localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, id);
+    this.safeSetItem(STORAGE_KEYS.CURRENT_USER_ID, id);
   }
 
   static getCurrentUser(): StoredUserAccount {
@@ -207,7 +218,7 @@ export class DataService {
 
   static saveTasks(tasks: StudyTask[], userId?: string): void {
     const uid = userId || this.getCurrentUserId();
-    localStorage.setItem(STORAGE_KEYS.TASKS + uid, JSON.stringify(tasks));
+    this.safeSetItem(STORAGE_KEYS.TASKS + uid, JSON.stringify(tasks));
   }
 
   static getSubjects(userId?: string): SubjectItem[] {
@@ -240,7 +251,7 @@ export class DataService {
 
   static saveSubjects(subjects: SubjectItem[], userId?: string): void {
     const uid = userId || this.getCurrentUserId();
-    localStorage.setItem(STORAGE_KEYS.SUBJECTS + uid, JSON.stringify(subjects));
+    this.safeSetItem(STORAGE_KEYS.SUBJECTS + uid, JSON.stringify(subjects));
   }
 
   static addSubject(name: string, color?: string, userId?: string): SubjectItem {
@@ -277,7 +288,7 @@ export class DataService {
 
   static saveLibrary(items: LibraryItem[], userId?: string): void {
     const uid = userId || this.getCurrentUserId();
-    localStorage.setItem(STORAGE_KEYS.LIBRARY + uid, JSON.stringify(items));
+    this.safeSetItem(STORAGE_KEYS.LIBRARY + uid, JSON.stringify(items));
   }
 
   static getBadges(userId?: string): Badge[] {
@@ -302,7 +313,7 @@ export class DataService {
 
   static saveBadges(badges: Badge[], userId?: string): void {
     const uid = userId || this.getCurrentUserId();
-    localStorage.setItem(STORAGE_KEYS.BADGES + uid, JSON.stringify(badges));
+    this.safeSetItem(STORAGE_KEYS.BADGES + uid, JSON.stringify(badges));
   }
 
   static getChallenges(userId?: string): WeeklyChallenge[] {
@@ -322,7 +333,7 @@ export class DataService {
 
   static saveChallenges(challenges: WeeklyChallenge[], userId?: string): void {
     const uid = userId || this.getCurrentUserId();
-    localStorage.setItem(STORAGE_KEYS.CHALLENGES + uid, JSON.stringify(challenges));
+    this.safeSetItem(STORAGE_KEYS.CHALLENGES + uid, JSON.stringify(challenges));
   }
 
   static getSettings(userId?: string): AppSettings {
@@ -340,7 +351,7 @@ export class DataService {
 
   static saveSettings(settings: AppSettings, userId?: string): void {
     const uid = userId || this.getCurrentUserId();
-    localStorage.setItem(STORAGE_KEYS.SETTINGS + uid, JSON.stringify(settings));
+    this.safeSetItem(STORAGE_KEYS.SETTINGS + uid, JSON.stringify(settings));
   }
 
   static getNotifications(userId?: string): NotificationItem[] {
@@ -360,7 +371,7 @@ export class DataService {
 
   static saveNotifications(notifs: NotificationItem[], userId?: string): void {
     const uid = userId || this.getCurrentUserId();
-    localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS + uid, JSON.stringify(notifs));
+    this.safeSetItem(STORAGE_KEYS.NOTIFICATIONS + uid, JSON.stringify(notifs));
   }
 
   static getAuditLogs(userId?: string): AuditLog[] {
@@ -380,7 +391,7 @@ export class DataService {
 
   static saveAuditLogs(logs: AuditLog[], userId?: string): void {
     const uid = userId || this.getCurrentUserId();
-    localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS + uid, JSON.stringify(logs.slice(0, 50)));
+    this.safeSetItem(STORAGE_KEYS.AUDIT_LOGS + uid, JSON.stringify(logs.slice(0, 50)));
   }
 
   static addAuditLog(action: string, details: string, userId?: string): void {

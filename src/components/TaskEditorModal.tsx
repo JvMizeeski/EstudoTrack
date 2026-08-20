@@ -135,10 +135,15 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     fileList.forEach((file: File) => {
       if (!file.type.startsWith('image/')) return;
       const reader = new FileReader();
-      reader.onload = (loadEvt) => {
+      reader.onload = async (loadEvt) => {
         const base64 = loadEvt.target?.result as string;
-        if (base64) {
-          setImages((prev) => [...prev, base64]);
+        if (!base64) return;
+        // Show it immediately, then swap for the Supabase Storage URL once it
+        // uploads (falls back to the base64 itself if the upload fails).
+        setImages((prev) => [...prev, base64]);
+        const finalUrl = await SupabaseSyncService.uploadTaskImage(userId, base64);
+        if (finalUrl && finalUrl !== base64) {
+          setImages((prev) => prev.map((img) => (img === base64 ? finalUrl : img)));
         }
       };
       reader.readAsDataURL(file);
@@ -801,8 +806,11 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                 type="button"
                 onClick={() => {
                   if (confirm('Deseja excluir este card de estudo permanentemente?')) {
-                    onDelete(task.id!);
-                    onClose();
+                    try {
+                      onDelete(task.id!);
+                    } finally {
+                      onClose();
+                    }
                   }
                 }}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-500 hover:bg-rose-500/10 border border-rose-500/20 transition-colors cursor-pointer"
