@@ -19,6 +19,7 @@
     "@tiptap/extension-placeholder": "^3.30.2",
     "@tiptap/extension-task-item": "^3.30.2",
     "@tiptap/extension-task-list": "^3.30.2",
+    "@tiptap/extension-text-align": "^3.30.2",
     "@tiptap/pm": "^3.30.2",
     "@tiptap/react": "^3.30.2",
     "@tiptap/starter-kit": "^3.30.2",
@@ -33,6 +34,7 @@
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "tiptap-extension-resize-image": "^1.4.6",
     "vite": "^6.2.3"
   },
   "devDependencies": {

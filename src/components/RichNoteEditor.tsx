@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import ImageExtension from '@tiptap/extension-image';
+import ImageResize from 'tiptap-extension-resize-image';
+import TextAlign from '@tiptap/extension-text-align';
 import Placeholder from '@tiptap/extension-placeholder';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
@@ -21,7 +22,35 @@ import {
   Redo2,
   Maximize2,
   Minimize2,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignJustify,
 } from 'lucide-react';
+
+// The resize/align extension stores width & alignment on the <img> via non-standard
+// `containerstyle`/`wrapperstyle` attributes that only the live editor's NodeView
+// understands. Flatten them into a real `style` attribute so the saved HTML also
+// renders correctly in the read-only card preview (plain dangerouslySetInnerHTML).
+function normalizeResizedImages(html: string): string {
+  if (typeof document === 'undefined' || !html.includes('style')) return html;
+  const container = document.createElement('div');
+  container.innerHTML = html;
+  container.querySelectorAll('img[containerstyle], img[wrapperstyle]').forEach((img) => {
+    const containerStyle = img.getAttribute('containerstyle') || '';
+    const wrapperStyle = img.getAttribute('wrapperstyle') || '';
+    img.removeAttribute('containerstyle');
+    img.removeAttribute('wrapperstyle');
+    if (containerStyle) img.setAttribute('style', containerStyle);
+    if (wrapperStyle) {
+      const outer = document.createElement('div');
+      outer.setAttribute('style', wrapperStyle);
+      img.replaceWith(outer);
+      outer.appendChild(img);
+    }
+  });
+  return container.innerHTML;
+}
 
 interface RichNoteEditorProps {
   content: string;
@@ -49,7 +78,7 @@ async function insertImageFile(editor: Editor, file: File, onUploadImage: (file:
     if (finalUrl && finalUrl !== base64) {
       const { state } = editor;
       state.doc.descendants((node, pos) => {
-        if (node.type.name === 'image' && node.attrs.src === base64) {
+        if (node.type.name === 'imageResize' && node.attrs.src === base64) {
           editor.chain().command(({ tr }) => {
             tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: finalUrl });
             return true;
@@ -104,7 +133,8 @@ export const RichNoteEditor: React.FC<RichNoteEditorProps> = ({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ link: { openOnClick: false, autolink: true } }),
-      ImageExtension,
+      ImageResize.configure({ inline: false }),
+      TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Placeholder.configure({ placeholder: placeholder || 'Escreva seu resumo...' }),
       TaskList,
       TaskItem.configure({ nested: true }),
@@ -130,7 +160,7 @@ export const RichNoteEditor: React.FC<RichNoteEditorProps> = ({
       },
     },
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML(), editor.getText());
+      onChange(normalizeResizedImages(editor.getHTML()), editor.getText());
     },
   });
 
@@ -197,6 +227,21 @@ export const RichNoteEditor: React.FC<RichNoteEditorProps> = ({
       </ToolbarButton>
       <ToolbarButton title="Citação" isDark={isDark} accentColor={accentColor} active={editor.isActive('blockquote')} onClick={() => editor.chain().focus().toggleBlockquote().run()}>
         <Quote className="w-3.5 h-3.5" />
+      </ToolbarButton>
+
+      <span className={`w-px h-4 mx-1 ${isDark ? 'bg-slate-700' : 'bg-slate-300'}`} />
+
+      <ToolbarButton title="Alinhar à esquerda" isDark={isDark} accentColor={accentColor} active={editor.isActive({ textAlign: 'left' })} onClick={() => editor.chain().focus().setTextAlign('left').run()}>
+        <AlignLeft className="w-3.5 h-3.5" />
+      </ToolbarButton>
+      <ToolbarButton title="Centralizar" isDark={isDark} accentColor={accentColor} active={editor.isActive({ textAlign: 'center' })} onClick={() => editor.chain().focus().setTextAlign('center').run()}>
+        <AlignCenter className="w-3.5 h-3.5" />
+      </ToolbarButton>
+      <ToolbarButton title="Alinhar à direita" isDark={isDark} accentColor={accentColor} active={editor.isActive({ textAlign: 'right' })} onClick={() => editor.chain().focus().setTextAlign('right').run()}>
+        <AlignRight className="w-3.5 h-3.5" />
+      </ToolbarButton>
+      <ToolbarButton title="Justificar" isDark={isDark} accentColor={accentColor} active={editor.isActive({ textAlign: 'justify' })} onClick={() => editor.chain().focus().setTextAlign('justify').run()}>
+        <AlignJustify className="w-3.5 h-3.5" />
       </ToolbarButton>
 
       <span className={`w-px h-4 mx-1 ${isDark ? 'bg-slate-700' : 'bg-slate-300'}`} />
