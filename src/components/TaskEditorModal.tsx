@@ -217,28 +217,31 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
       }
     }
 
-    onSave({
-      id: task?.id,
-      title: title.trim(),
-      subject: finalSubjectName,
-      categoryColor,
-      date,
-      startTime: isSpecificTime ? startTime : undefined,
-      endTime: isSpecificTime ? endTime : undefined,
-      durationMinutes: calculatedDuration,
-      isSpecificTime,
-      recurrence,
-      recurrenceDays: recurrence === 'custom' || recurrence === 'weekly' || recurrence === 'weekdays' ? recurrenceDays : undefined,
-      completed: task?.completed || false,
-      completedAt: task?.completedAt,
-      notes: notes.trim(),
-      notesHtml,
-      images,
-      reviewScheduled,
-      priority,
-      tags,
-    });
-    onClose();
+    try {
+      onSave({
+        id: task?.id,
+        title: title.trim(),
+        subject: finalSubjectName,
+        categoryColor,
+        date,
+        startTime: isSpecificTime ? startTime : undefined,
+        endTime: isSpecificTime ? endTime : undefined,
+        durationMinutes: calculatedDuration,
+        isSpecificTime,
+        recurrence,
+        recurrenceDays: recurrence === 'custom' || recurrence === 'weekly' || recurrence === 'weekdays' ? recurrenceDays : undefined,
+        completed: task?.completed || false,
+        completedAt: task?.completedAt,
+        notes: notes.trim(),
+        notesHtml,
+        images,
+        reviewScheduled,
+        priority,
+        tags,
+      });
+    } finally {
+      onClose();
+    }
   };
 
   const weekDayLabels = [
@@ -333,35 +336,37 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
               </button>
             </div>
 
-            <div
-              className={`flex items-center gap-x-2 gap-y-1 flex-wrap p-2.5 rounded-xl border text-[11px] sm:text-xs ${
-                isDark ? 'bg-slate-900/50 border-slate-700/50 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'
-              }`}
-            >
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: categoryColor }} />
-              <span className="font-bold" style={{ color: pal.previewColor }}>{identityLabel}</span>
-              <span className="opacity-40">•</span>
-              <span className="font-semibold truncate max-w-[10rem] sm:max-w-none">{title || 'Sem título'}</span>
-              <span className="opacity-40 hidden sm:inline">•</span>
-              <span className="hidden sm:flex items-center gap-1">
-                <Calendar className="w-3 h-3" />
-                {date}
-              </span>
-              <span className="flex items-center gap-1">
-                <Clock className="w-3 h-3" />
-                {timeLabel}
-              </span>
-              <button
-                type="button"
-                onClick={() => setActiveTab('identity')}
-                title="Editar identificação"
-                className={`ml-auto p-1.5 rounded-lg cursor-pointer transition-colors ${
-                  isDark ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200'
+            {activeTab === 'notes' && (
+              <div
+                className={`flex items-center gap-x-2 gap-y-1 flex-wrap p-2.5 rounded-xl border text-[11px] sm:text-xs ${
+                  isDark ? 'bg-slate-900/50 border-slate-700/50 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'
                 }`}
               >
-                <Pencil className="w-3.5 h-3.5" />
-              </button>
-            </div>
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: categoryColor }} />
+                <span className="font-bold" style={{ color: pal.previewColor }}>{identityLabel}</span>
+                <span className="opacity-40">•</span>
+                <span className="font-semibold truncate max-w-[10rem] sm:max-w-none">{title || 'Sem título'}</span>
+                <span className="opacity-40 hidden sm:inline">•</span>
+                <span className="hidden sm:flex items-center gap-1">
+                  <Calendar className="w-3 h-3" />
+                  {date}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  {timeLabel}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('identity')}
+                  title="Editar identificação"
+                  className={`ml-auto p-1.5 rounded-lg cursor-pointer transition-colors ${
+                    isDark ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200'
+                  }`}
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Scrollable tab content */}
