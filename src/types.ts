@@ -17,6 +17,7 @@ export interface StudyTask {
   isSpecificTime: boolean;
   recurrence: RecurrenceType;
   recurrenceDays?: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
+  excludedDates?: string[]; // YYYY-MM-DD dates skipped from an otherwise-recurring series
   completed: boolean;
   completedAt?: string;
   notes: string; // plain-text mirror of notesHtml, kept in sync for search

@@ -21,12 +21,14 @@ import DOMPurify from 'dompurify';
 import { StudyTask, ColorPalette, ThemeMode } from '../types';
 import { COLOR_PALETTES } from '../lib/theme';
 import { formatDuration, formatShortDate } from '../lib/dateUtils';
+import { ConfirmDeleteTaskModal } from './ConfirmDeleteTaskModal';
 
 interface TaskCardProps {
   task: StudyTask;
+  viewedDate?: string;
   onToggleComplete: (taskId: string, isCompleted: boolean) => void;
-  onEdit: (task: StudyTask) => void;
-  onDelete: (taskId: string) => void;
+  onEdit: (task: StudyTask, occurrenceDate?: string) => void;
+  onDelete: (taskId: string, scope?: 'all' | 'occurrence', occurrenceDate?: string) => void;
   onScheduleReview?: (task: StudyTask) => void;
   colorPalette: ColorPalette;
   themeMode: ThemeMode;
@@ -34,6 +36,7 @@ interface TaskCardProps {
 
 export const TaskCard: React.FC<TaskCardProps> = ({
   task,
+  viewedDate,
   onToggleComplete,
   onEdit,
   onDelete,
@@ -44,6 +47,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const [showFullNotes, setShowFullNotes] = useState(false);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [showMenu, setShowMenu] = useState(false);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const occurrenceDate = viewedDate || task.date;
 
   const isDark = themeMode === 'dark';
   const pal = COLOR_PALETTES[colorPalette] || COLOR_PALETTES.purple;
@@ -300,7 +305,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           <div className="flex items-center gap-1">
             <button
               type="button"
-              onClick={() => onEdit(task)}
+              onClick={() => onEdit(task, occurrenceDate)}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors cursor-pointer"
               title="Editar Card"
             >
@@ -308,11 +313,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => {
-                if (confirm('Deseja excluir este bloco de estudos?')) {
-                  onDelete(task.id);
-                }
-              }}
+              onClick={() => setIsConfirmDeleteOpen(true)}
               className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
               title="Excluir Card"
             >
@@ -344,6 +345,19 @@ export const TaskCard: React.FC<TaskCardProps> = ({
           </div>
         </div>
       )}
+
+      <ConfirmDeleteTaskModal
+        isOpen={isConfirmDeleteOpen}
+        isRecurring={task.recurrence !== 'none'}
+        occurrenceDate={occurrenceDate}
+        onCancel={() => setIsConfirmDeleteOpen(false)}
+        onConfirm={(scope) => {
+          setIsConfirmDeleteOpen(false);
+          onDelete(task.id, scope, occurrenceDate);
+        }}
+        colorPalette={colorPalette}
+        themeMode={themeMode}
+      />
     </>
   );
 };

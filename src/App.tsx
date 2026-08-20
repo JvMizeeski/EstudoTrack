@@ -17,7 +17,7 @@ import {
 } from './types';
 import { DataService, StoredUserAccount } from './lib/storage';
 import { COLOR_PALETTES, getThemeClasses } from './lib/theme';
-import { calculateNextSpacedReviewDate, formatDateToISO, getBrasiliaDate } from './lib/dateUtils';
+import { calculateNextSpacedReviewDate, formatDateToISO, getBrasiliaDate, formatShortDate } from './lib/dateUtils';
 import { INITIAL_RANKING_PEERS } from './lib/gamification';
 import { SupabaseSyncService } from './lib/supabaseSync';
 import { hashPassword, verifyPassword, isBcryptHash } from './lib/passwordUtils';
@@ -89,6 +89,7 @@ export default function App() {
   const [isTaskEditorOpen, setIsTaskEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Partial<StudyTask> | null>(null);
   const [taskInitialDate, setTaskInitialDate] = useState<string | undefined>(undefined);
+  const [editingOccurrenceDate, setEditingOccurrenceDate] = useState<string | undefined>(undefined);
   const [toast, setToast] = useState<ToastData | null>(null);
 
   const [isStatsOpen, setIsStatsOpen] = useState(false);
@@ -257,12 +258,14 @@ export default function App() {
   const handleOpenAddTask = (date?: string) => {
     setEditingTask(null);
     setTaskInitialDate(date);
+    setEditingOccurrenceDate(undefined);
     setIsTaskEditorOpen(true);
   };
 
-  const handleOpenEditTask = (task: StudyTask) => {
+  const handleOpenEditTask = (task: StudyTask, occurrenceDate?: string) => {
     setEditingTask(task);
     setTaskInitialDate(task.date);
+    setEditingOccurrenceDate(occurrenceDate || task.date);
     setIsTaskEditorOpen(true);
   };
 
@@ -303,17 +306,34 @@ export default function App() {
     setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
   };
 
-  const handleDeleteTask = (taskId: string) => {
+  const handleDeleteTask = (taskId: string, scope: 'all' | 'occurrence' = 'all', occurrenceDate?: string) => {
     const target = tasks.find((t) => t.id === taskId);
+    if (!target) return;
+
+    if (scope === 'occurrence' && target.recurrence !== 'none' && occurrenceDate) {
+      const updatedExcludedDates = Array.from(new Set([...(target.excludedDates || []), occurrenceDate]));
+      const updatedItem: StudyTask = { ...target, excludedDates: updatedExcludedDates };
+      const updatedList = tasks.map((t) => (t.id === taskId ? updatedItem : t));
+      setTasks(updatedList);
+      DataService.saveTasks(updatedList, currentUserAccount.id);
+      SupabaseSyncService.syncTask(updatedItem);
+      DataService.addAuditLog(
+        'Exclusão de Ocorrência',
+        `Removeu a ocorrência de ${occurrenceDate} do card "${target.title}"`,
+        currentUserAccount.id
+      );
+      setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
+      setToast({ message: `Ocorrência de ${formatShortDate(occurrenceDate)} removida.`, type: 'delete' });
+      return;
+    }
+
     const updated = tasks.filter((t) => t.id !== taskId);
     setTasks(updated);
     DataService.saveTasks(updated, currentUserAccount.id);
     SupabaseSyncService.deleteTask(taskId);
-    if (target) {
-      DataService.addAuditLog('Exclusão de Tarefa', `Removeu o card "${target.title}"`, currentUserAccount.id);
-      setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
-      setToast({ message: `Card "${target.title}" excluído.`, type: 'delete' });
-    }
+    DataService.addAuditLog('Exclusão de Tarefa', `Removeu o card "${target.title}"`, currentUserAccount.id);
+    setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
+    setToast({ message: `Card "${target.title}" excluído.`, type: 'delete' });
   };
 
   const handleToggleTaskComplete = (taskId: string, completed: boolean) => {
@@ -758,6 +778,7 @@ export default function App() {
         colorPalette={activePalette}
         themeMode={settings.themeMode}
         initialDate={taskInitialDate}
+        occurrenceDate={editingOccurrenceDate}
         userId={currentUserAccount.id}
       />
 

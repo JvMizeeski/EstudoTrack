@@ -37,6 +37,7 @@ import {
   getWeekDays,
   getMonthDaysGrid,
   formatDuration,
+  taskOccursOnDate,
 } from '../lib/dateUtils';
 import { TaskCard } from './TaskCard';
 
@@ -44,8 +45,8 @@ interface AgendaViewProps {
   tasks: StudyTask[];
   user: UserProfile;
   onAddTask: (date?: string) => void;
-  onEditTask: (task: StudyTask) => void;
-  onDeleteTask: (taskId: string) => void;
+  onEditTask: (task: StudyTask, occurrenceDate?: string) => void;
+  onDeleteTask: (taskId: string, scope?: 'all' | 'occurrence', occurrenceDate?: string) => void;
   onToggleTaskComplete: (taskId: string, completed: boolean) => void;
   onScheduleReview: (task: StudyTask) => void;
   onOpenStats: () => void;
@@ -83,15 +84,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   }, [user.id, tasks]);
 
   // Tasks belonging to "Today"
-  const todayTasks = tasks.filter((t) => {
-    if (t.date === todayIso) return true;
-    const bDate = getBrasiliaDate();
-    const dayOfWeek = bDate.getDay();
-    if (t.recurrence === 'daily') return true;
-    if (t.recurrence === 'weekdays' && dayOfWeek >= 1 && dayOfWeek <= 5) return true;
-    if (t.recurrence === 'custom' && t.recurrenceDays?.includes(dayOfWeek)) return true;
-    return false;
-  });
+  const todayTasks = tasks.filter((t) => taskOccursOnDate(t, todayIso));
 
   const todayCompletedCount = todayTasks.filter((t) => t.completed).length;
   const todayProgressPercent = todayTasks.length > 0
@@ -161,16 +154,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
   // Helper to get tasks for a specific date (including recurring tasks)
   const getTasksForDate = (dateIso: string) => {
-    const targetDate = parseISODate(dateIso);
-    const dayOfWeek = targetDate.getDay();
-
-    return filteredTasks.filter((t) => {
-      if (t.date === dateIso) return true;
-      if (t.recurrence === 'daily') return true;
-      if (t.recurrence === 'weekdays' && dayOfWeek >= 1 && dayOfWeek <= 5) return true;
-      if (t.recurrence === 'custom' && t.recurrenceDays?.includes(dayOfWeek)) return true;
-      return false;
-    });
+    return filteredTasks.filter((t) => taskOccursOnDate(t, dateIso));
   };
 
   const weekDays = getWeekDays(parseISODate(selectedDateIso));
@@ -521,6 +505,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                 <TaskCard
                   key={task.id}
                   task={task}
+                  viewedDate={selectedDateIso}
                   onToggleComplete={onToggleTaskComplete}
                   onEdit={onEditTask}
                   onDelete={onDeleteTask}
@@ -651,7 +636,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                               {task.completed && <Check className="w-3 h-3" />}
                             </button>
                             <p
-                              onClick={() => onEditTask(task)}
+                              onClick={() => onEditTask(task, day.iso)}
                               className={`font-semibold text-xs leading-tight cursor-pointer hover:text-purple-500 transition-colors line-clamp-2 ${
                                 task.completed ? 'line-through text-slate-500' : isDark ? 'text-slate-200' : 'text-slate-900'
                               }`}

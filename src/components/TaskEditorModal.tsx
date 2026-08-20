@@ -27,16 +27,18 @@ import { formatDateToISO, getBrasiliaDate } from '../lib/dateUtils';
 import { DataService } from '../lib/storage';
 import { SupabaseSyncService } from '../lib/supabaseSync';
 import { RichNoteEditor } from './RichNoteEditor';
+import { ConfirmDeleteTaskModal } from './ConfirmDeleteTaskModal';
 
 interface TaskEditorModalProps {
   task: Partial<StudyTask> | null;
   isOpen: boolean;
   onClose: () => void;
   onSave: (taskData: Omit<StudyTask, 'id' | 'userId' | 'createdAt'> & { id?: string }) => void;
-  onDelete?: (taskId: string) => void;
+  onDelete?: (taskId: string, scope?: 'all' | 'occurrence', occurrenceDate?: string) => void;
   colorPalette: ColorPalette;
   themeMode: ThemeMode;
   initialDate?: string;
+  occurrenceDate?: string;
   userId: string;
 }
 
@@ -49,6 +51,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
   colorPalette,
   themeMode,
   initialDate,
+  occurrenceDate,
   userId,
 }) => {
   const isDark = themeMode === 'dark';
@@ -82,6 +85,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
   const [newTagInput, setNewTagInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [activeTab, setActiveTab] = useState<'identity' | 'notes'>(task?.id ? 'notes' : 'identity');
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -804,15 +808,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
             {task?.id && onDelete ? (
               <button
                 type="button"
-                onClick={() => {
-                  if (confirm('Deseja excluir este card de estudo permanentemente?')) {
-                    try {
-                      onDelete(task.id!);
-                    } finally {
-                      onClose();
-                    }
-                  }
-                }}
+                onClick={() => setIsConfirmDeleteOpen(true)}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-rose-500 hover:bg-rose-500/10 border border-rose-500/20 transition-colors cursor-pointer"
               >
                 <Trash2 className="w-4 h-4" />
@@ -847,6 +843,25 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
           </div>
         </form>
       </div>
+
+      {task?.id && onDelete && (
+        <ConfirmDeleteTaskModal
+          isOpen={isConfirmDeleteOpen}
+          isRecurring={task.recurrence !== 'none' && task.recurrence !== undefined}
+          occurrenceDate={occurrenceDate || task.date || defaultDate}
+          onCancel={() => setIsConfirmDeleteOpen(false)}
+          onConfirm={(scope) => {
+            setIsConfirmDeleteOpen(false);
+            try {
+              onDelete(task.id!, scope, occurrenceDate || task.date);
+            } finally {
+              onClose();
+            }
+          }}
+          colorPalette={colorPalette}
+          themeMode={themeMode}
+        />
+      )}
     </div>
   );
 };

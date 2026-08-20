@@ -2,6 +2,25 @@
  * Date & Time utilities with Brasília Timezone (UTC-3) support
  */
 
+import { StudyTask } from '../types';
+
+// A task never occurs before its own anchor date, and never on a date the
+// user explicitly removed from the series (excludedDates).
+export function taskOccursOnDate(task: StudyTask, dateIso: string): boolean {
+  if (dateIso < task.date) return false;
+  if (task.excludedDates?.includes(dateIso)) return false;
+
+  if (task.recurrence === 'none') return task.date === dateIso;
+
+  const dayOfWeek = parseISODate(dateIso).getDay();
+  if (task.recurrence === 'daily') return true;
+  if (task.recurrence === 'weekdays') return dayOfWeek >= 1 && dayOfWeek <= 5;
+  if (task.recurrence === 'custom' || task.recurrence === 'weekly') {
+    return task.recurrenceDays?.includes(dayOfWeek) ?? false;
+  }
+  return false;
+}
+
 export function getBrasiliaDate(): Date {
   const now = new Date();
   // Compute UTC time in ms, then subtract 3 hours (UTC-3)
