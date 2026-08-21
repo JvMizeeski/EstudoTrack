@@ -18,7 +18,6 @@ import {
 import { DataService, StoredUserAccount } from './lib/storage';
 import { COLOR_PALETTES, getThemeClasses } from './lib/theme';
 import { calculateNextSpacedReviewDate, formatDateToISO, getBrasiliaDate, formatShortDate } from './lib/dateUtils';
-import { INITIAL_RANKING_PEERS } from './lib/gamification';
 import { SupabaseSyncService } from './lib/supabaseSync';
 import { hashPassword, verifyPassword, isBcryptHash } from './lib/passwordUtils';
 
@@ -144,10 +143,11 @@ export default function App() {
 
   const fetchRemoteData = async (userId: string) => {
     try {
-      const [remoteProfile, remoteTasks, remoteLib] = await Promise.all([
+      const [remoteProfile, remoteTasks, remoteLib, leaderboard] = await Promise.all([
         SupabaseSyncService.fetchProfile(userId),
         SupabaseSyncService.fetchTasks(userId),
         SupabaseSyncService.fetchLibrary(userId),
+        SupabaseSyncService.fetchLeaderboard(userId),
       ]);
 
       if (remoteProfile) {
@@ -161,9 +161,14 @@ export default function App() {
         setLibraryItems(remoteLib);
         DataService.saveLibrary(remoteLib, userId);
       }
+      setRankingPeers(leaderboard);
     } catch (err) {
       console.warn('[Supabase Sync Error]', err);
     }
+  };
+
+  const handleRefreshRanking = async () => {
+    setRankingPeers(await SupabaseSyncService.fetchLeaderboard(currentUserAccount.id));
   };
 
   // REALTIME SUBSCRIPTION: Automatic live two-way sync
@@ -245,10 +250,11 @@ export default function App() {
 
   // Helper to add XP and check badge progress
   const awardXP = (amount: number, reason: string) => {
-    setUserProfile((prev) => {
-      const newXP = prev.xp + amount;
-      return { ...prev, xp: newXP };
-    });
+    const updatedProfile = { ...userProfile, xp: userProfile.xp + amount };
+    setUserProfile(updatedProfile);
+    // Sync immediately so the new XP shows up in the cross-user ranking
+    // right away, instead of only after a manual "sync now" click.
+    SupabaseSyncService.syncProfile(updatedProfile);
 
     DataService.addAuditLog('Ganho de XP', `+${amount} XP: ${reason}`, currentUserAccount.id);
     setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
@@ -447,23 +453,6 @@ export default function App() {
     SupabaseSyncService.deleteLibraryItem(id);
   };
 
-  // 3. Gamification Ranking
-  const handleAddFriendToRanking = (friendName: string) => {
-    const newPeer: RankingUser = {
-      id: 'peer-' + Date.now(),
-      name: friendName,
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      xp: 850,
-      level: 4,
-      title: 'Analista do Saber',
-      weeklyMinutes: 200,
-      tasksCompleted: 6,
-      streak: 3,
-      positionChange: 0,
-    };
-    setRankingPeers((prev) => [...prev, newPeer]);
-    awardXP(15, `Conectou-se com ${friendName}`);
-  };
 
   // 5. Settings & Theming
   const handleSaveProfile = (updates: Partial<UserProfile>) => {
@@ -742,7 +731,7 @@ export default function App() {
               user={userProfile}
               badges={badges}
               peers={rankingPeers}
-              onAddFriend={handleAddFriendToRanking}
+              onRefresh={handleRefreshRanking}
               colorPalette={activePalette}
               themeMode={settings.themeMode}
             />

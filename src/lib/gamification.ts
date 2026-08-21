@@ -1,4 +1,4 @@
-import { Badge, WeeklyChallenge, RankingUser, UserProfile } from '../types';
+import { Badge, WeeklyChallenge } from '../types';
 
 export const LEVEL_THRESHOLDS = [
   0,     // Nível 1: Novato dos Estudos
@@ -192,65 +192,3 @@ export const INITIAL_WEEKLY_CHALLENGES: WeeklyChallenge[] = [
   },
 ];
 
-export const INITIAL_RANKING_PEERS: RankingUser[] = [
-  {
-    id: 'peer_1',
-    name: 'Beatriz Vasconcelos',
-    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-    xp: 1840,
-    level: 6,
-    title: 'Mestre da Disciplina',
-    weeklyMinutes: 480,
-    tasksCompleted: 14,
-    streak: 12,
-    positionChange: 0,
-  },
-  {
-    id: 'peer_2',
-    name: 'Lucas Drummond',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    xp: 1620,
-    level: 6,
-    title: 'Mestre da Disciplina',
-    weeklyMinutes: 410,
-    tasksCompleted: 12,
-    streak: 8,
-    positionChange: 1,
-  },
-  {
-    id: 'peer_3',
-    name: 'Mariana Duarte',
-    avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
-    xp: 1350,
-    level: 5,
-    title: 'Maratonista Acadêmico',
-    weeklyMinutes: 350,
-    tasksCompleted: 10,
-    streak: 5,
-    positionChange: -1,
-  },
-  {
-    id: 'peer_4',
-    name: 'Gabriel Ribeiro',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80',
-    xp: 980,
-    level: 5,
-    title: 'Maratonista Acadêmico',
-    weeklyMinutes: 280,
-    tasksCompleted: 9,
-    streak: 4,
-    positionChange: 0,
-  },
-  {
-    id: 'peer_5',
-    name: 'Camila Santos',
-    avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=150&auto=format&fit=crop&q=80',
-    xp: 720,
-    level: 4,
-    title: 'Analista do Saber',
-    weeklyMinutes: 210,
-    tasksCompleted: 7,
-    streak: 3,
-    positionChange: 0,
-  },
-];

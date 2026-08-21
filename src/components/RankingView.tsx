@@ -31,7 +31,7 @@ interface RankingViewProps {
   user: UserProfile;
   badges: Badge[];
   peers: RankingUser[];
-  onAddFriend?: (friendName: string) => void;
+  onRefresh?: () => void | Promise<void>;
   colorPalette: ColorPalette;
   themeMode: ThemeMode;
 }
@@ -40,6 +40,7 @@ export const RankingView: React.FC<RankingViewProps> = ({
   user,
   badges,
   peers,
+  onRefresh,
   colorPalette,
   themeMode,
 }) => {
@@ -74,11 +75,13 @@ export const RankingView: React.FC<RankingViewProps> = ({
 
   const unlockedBadgesCount = badges.filter((b) => b.unlocked).length;
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setIsRefreshing(true);
-    setTimeout(() => {
+    try {
+      await onRefresh?.();
+    } finally {
       setIsRefreshing(false);
-    }, 600);
+    }
   };
 
   const filteredBadges = badges.filter((b) => {

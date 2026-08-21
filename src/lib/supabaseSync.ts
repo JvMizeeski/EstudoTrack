@@ -4,8 +4,10 @@ import {
   StudyTask,
   LibraryItem,
   SubjectItem,
+  RankingUser,
 } from '../types';
 import { StoredUserAccount } from './storage';
+import { calculateLevelFromXP } from './gamification';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
 export interface RealtimeHandlers {
@@ -319,6 +321,44 @@ export class SupabaseSyncService {
     } catch (err) {
       console.warn('[Supabase fetchProfile error]', err);
       return null;
+    }
+  }
+
+  // Every registered profile with at least 1 XP competes in the ranking,
+  // not just people the current user manually "added" (that feature was
+  // never wired to any real UI and only ever produced a fake local entry).
+  static async fetchLeaderboard(excludeUserId?: string): Promise<RankingUser[]> {
+    if (!isSupabaseConfigured()) return [];
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, name, avatar, xp, streak_days')
+        .gt('xp', 0)
+        .order('xp', { ascending: false })
+        .limit(100);
+
+      if (error || !data) return [];
+
+      return data
+        .filter((row) => row.id !== excludeUserId)
+        .map((row) => {
+          const levelInfo = calculateLevelFromXP(row.xp || 0);
+          return {
+            id: row.id,
+            name: row.name,
+            avatar: row.avatar || '',
+            xp: row.xp || 0,
+            level: levelInfo.level,
+            title: levelInfo.title,
+            weeklyMinutes: 0,
+            tasksCompleted: 0,
+            streak: row.streak_days || 0,
+            positionChange: 0,
+          };
+        });
+    } catch (err) {
+      console.warn('[Supabase fetchLeaderboard error]', err);
+      return [];
     }
   }
 
