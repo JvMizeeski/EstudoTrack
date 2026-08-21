@@ -1,6 +1,0 @@
-{
-  "name": "EstudaTrack",
-  "description": "Aplicativo responsivo de alto desempenho para organização de estudos, agenda semanal/mensal com blocos de tempo, anotações ricas com imagens, revisões programadas, biblioteca, gamificação e ranking.",
-  "requestFramePermissions": ["notifications"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
