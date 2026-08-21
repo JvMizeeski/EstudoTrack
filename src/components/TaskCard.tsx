@@ -20,13 +20,13 @@ import confetti from 'canvas-confetti';
 import DOMPurify from 'dompurify';
 import { StudyTask, ColorPalette, ThemeMode } from '../types';
 import { COLOR_PALETTES } from '../lib/theme';
-import { formatDuration, formatShortDate } from '../lib/dateUtils';
+import { formatDuration, formatShortDate, isTaskCompletedOnDate } from '../lib/dateUtils';
 import { ConfirmDeleteTaskModal } from './ConfirmDeleteTaskModal';
 
 interface TaskCardProps {
   task: StudyTask;
   viewedDate?: string;
-  onToggleComplete: (taskId: string, isCompleted: boolean) => void;
+  onToggleComplete: (taskId: string, isCompleted: boolean, occurrenceDate?: string) => void;
   onEdit: (task: StudyTask, occurrenceDate?: string) => void;
   onDelete: (taskId: string, scope?: 'all' | 'occurrence', occurrenceDate?: string) => void;
   onScheduleReview?: (task: StudyTask) => void;
@@ -49,12 +49,13 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const [showMenu, setShowMenu] = useState(false);
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
   const occurrenceDate = viewedDate || task.date;
+  const isCompleted = isTaskCompletedOnDate(task, occurrenceDate);
 
   const isDark = themeMode === 'dark';
   const pal = COLOR_PALETTES[colorPalette] || COLOR_PALETTES.purple;
 
   const handleCheckClick = () => {
-    const nextState = !task.completed;
+    const nextState = !isCompleted;
     if (nextState) {
       // Fire confetti burst
       confetti({
@@ -64,7 +65,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         colors: [pal.previewColor, '#10b981', '#fbbf24', '#38bdf8'],
       });
     }
-    onToggleComplete(task.id, nextState);
+    onToggleComplete(task.id, nextState, occurrenceDate);
   };
 
   const getRecurrenceText = () => {
@@ -85,7 +86,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
       <div
         id={`study-card-${task.id}`}
         className={`group relative rounded-3xl border p-4 transition-all duration-200 hover:shadow-xl ${
-          task.completed
+          isCompleted
             ? isDark
               ? 'bg-slate-800/40 border-slate-700/40 opacity-75'
               : 'bg-slate-50/80 border-slate-200 opacity-80'
@@ -148,21 +149,21 @@ export const TaskCard: React.FC<TaskCardProps> = ({
             type="button"
             onClick={handleCheckClick}
             className={`w-6 h-6 mt-0.5 rounded-lg flex items-center justify-center transition-all cursor-pointer shrink-0 ${
-              task.completed
+              isCompleted
                 ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 ring-2 ring-emerald-500/30'
                 : isDark
                 ? 'border-2 border-slate-600 hover:border-slate-400'
                 : 'border-2 border-slate-300 hover:border-slate-400'
             }`}
-            title={task.completed ? 'Marcar como não concluído' : 'Marcar como concluído (+35 XP)'}
+            title={isCompleted ? 'Marcar como não concluído' : 'Marcar como concluído (+35 XP)'}
           >
-            {task.completed && <Check className="w-4 h-4 stroke-[3]" />}
+            {isCompleted && <Check className="w-4 h-4 stroke-[3]" />}
           </button>
 
           <div className="flex-1 min-w-0">
             <h3
               className={`font-semibold text-sm sm:text-base leading-snug tracking-tight transition-all ${
-                task.completed
+                isCompleted
                   ? 'line-through text-slate-500'
                   : isDark
                   ? 'text-slate-100'

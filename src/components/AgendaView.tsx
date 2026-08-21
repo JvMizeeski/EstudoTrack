@@ -38,6 +38,7 @@ import {
   getMonthDaysGrid,
   formatDuration,
   taskOccursOnDate,
+  isTaskCompletedOnDate,
 } from '../lib/dateUtils';
 import { TaskCard } from './TaskCard';
 
@@ -47,7 +48,7 @@ interface AgendaViewProps {
   onAddTask: (date?: string) => void;
   onEditTask: (task: StudyTask, occurrenceDate?: string) => void;
   onDeleteTask: (taskId: string, scope?: 'all' | 'occurrence', occurrenceDate?: string) => void;
-  onToggleTaskComplete: (taskId: string, completed: boolean) => void;
+  onToggleTaskComplete: (taskId: string, completed: boolean, occurrenceDate?: string) => void;
   onScheduleReview: (task: StudyTask) => void;
   onOpenStats: () => void;
   colorPalette: ColorPalette;
@@ -86,14 +87,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   // Tasks belonging to "Today"
   const todayTasks = tasks.filter((t) => taskOccursOnDate(t, todayIso));
 
-  const todayCompletedCount = todayTasks.filter((t) => t.completed).length;
+  const todayCompletedCount = todayTasks.filter((t) => isTaskCompletedOnDate(t, todayIso)).length;
   const todayProgressPercent = todayTasks.length > 0
     ? Math.round((todayCompletedCount / todayTasks.length) * 100)
     : 0;
 
   const todayTotalMinutes = todayTasks.reduce((acc, t) => acc + (t.durationMinutes || 0), 0);
   const todayCompletedMinutes = todayTasks
-    .filter((t) => t.completed)
+    .filter((t) => isTaskCompletedOnDate(t, todayIso))
     .reduce((acc, t) => acc + (t.durationMinutes || 0), 0);
 
   // Filter tasks based on search & subject filter
@@ -290,11 +291,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
         {/* Compact List of Today's items (Subject, Title, Suggested Time only) */}
         {todayTasks.length > 0 && (
           <div className="mt-3 pt-3 border-t grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2" style={{ borderColor: isDark ? 'rgba(51, 65, 85, 0.4)' : 'rgba(226, 232, 240, 0.8)' }}>
-            {todayTasks.map((t) => (
+            {todayTasks.map((t) => {
+              const isDone = isTaskCompletedOnDate(t, todayIso);
+              return (
               <div
                 key={t.id}
                 className={`flex items-center justify-between gap-2 p-2 rounded-xl border text-xs transition-colors ${
-                  t.completed
+                  isDone
                     ? isDark ? 'bg-slate-900/40 border-slate-800 opacity-60' : 'bg-slate-100 border-slate-200 opacity-60'
                     : isDark ? 'bg-slate-800/60 border-slate-700/60' : 'bg-slate-50 border-slate-200'
                 }`}
@@ -302,14 +305,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <button
                     type="button"
-                    onClick={() => onToggleTaskComplete(t.id, !t.completed)}
+                    onClick={() => onToggleTaskComplete(t.id, !isDone, todayIso)}
                     className={`w-4 h-4 rounded shrink-0 flex items-center justify-center transition-colors cursor-pointer ${
-                      t.completed
+                      isDone
                         ? 'bg-emerald-600 text-white'
                         : isDark ? 'border border-slate-600 hover:border-slate-400' : 'border border-slate-400 hover:border-slate-600'
                     }`}
                   >
-                    {t.completed && <Check className="w-3 h-3" />}
+                    {isDone && <Check className="w-3 h-3" />}
                   </button>
                   <div className="min-w-0 flex-1 truncate">
                     <div className="flex items-center gap-1.5">
@@ -320,9 +323,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                         {t.subject}
                       </span>
                       <span
-                        onClick={() => onEditTask(t)}
+                        onClick={() => onEditTask(t, todayIso)}
                         className={`font-semibold truncate cursor-pointer hover:underline ${
-                          t.completed ? 'line-through text-slate-500' : isDark ? 'text-slate-200' : 'text-slate-900'
+                          isDone ? 'line-through text-slate-500' : isDark ? 'text-slate-200' : 'text-slate-900'
                         }`}
                       >
                         {t.title}
@@ -338,7 +341,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                   </span>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -525,7 +529,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
             {weekDays.map((day) => {
               const dayTasks = getTasksForDate(day.iso);
-              const dayCompletedCount = dayTasks.filter((t) => t.completed).length;
+              const dayCompletedCount = dayTasks.filter((t) => isTaskCompletedOnDate(t, day.iso)).length;
 
               return (
                 <div
@@ -598,11 +602,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                         <span className="text-[10px] font-medium">Livre • Agendar</span>
                       </div>
                     ) : (
-                      dayTasks.map((task) => (
+                      dayTasks.map((task) => {
+                        const isDone = isTaskCompletedOnDate(task, day.iso);
+                        return (
                         <div
                           key={task.id}
                           className={`group p-2.5 rounded-2xl border text-xs transition-all relative ${
-                            task.completed
+                            isDone
                               ? isDark ? 'bg-slate-900/40 border-slate-800/60 opacity-60' : 'bg-slate-100 border-slate-200 opacity-60'
                               : isDark
                               ? 'bg-slate-800/90 border-slate-700/70 hover:border-purple-500/60'
@@ -626,19 +632,19 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                           <div className="flex items-start gap-1.5 my-1">
                             <button
                               type="button"
-                              onClick={() => onToggleTaskComplete(task.id, !task.completed)}
+                              onClick={() => onToggleTaskComplete(task.id, !isDone, day.iso)}
                               className={`w-4 h-4 rounded mt-0.5 shrink-0 flex items-center justify-center transition-colors cursor-pointer ${
-                                task.completed
+                                isDone
                                   ? 'bg-emerald-600 text-white'
                                   : isDark ? 'border border-slate-600 hover:border-purple-400' : 'border border-slate-400 hover:border-purple-600'
                               }`}
                             >
-                              {task.completed && <Check className="w-3 h-3" />}
+                              {isDone && <Check className="w-3 h-3" />}
                             </button>
                             <p
                               onClick={() => onEditTask(task, day.iso)}
                               className={`font-semibold text-xs leading-tight cursor-pointer hover:text-purple-500 transition-colors line-clamp-2 ${
-                                task.completed ? 'line-through text-slate-500' : isDark ? 'text-slate-200' : 'text-slate-900'
+                                isDone ? 'line-through text-slate-500' : isDark ? 'text-slate-200' : 'text-slate-900'
                               }`}
                             >
                               {task.title}
@@ -661,7 +667,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                             )}
                           </div>
                         </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -690,7 +697,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
             {monthGrid.map((cell, idx) => {
               const cellTasks = getTasksForDate(cell.iso);
               const hasTasks = cellTasks.length > 0;
-              const allDone = hasTasks && cellTasks.every((t) => t.completed);
+              const allDone = hasTasks && cellTasks.every((t) => isTaskCompletedOnDate(t, cell.iso));
 
               return (
                 <div

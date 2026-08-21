@@ -21,6 +21,14 @@ export function taskOccursOnDate(task: StudyTask, dateIso: string): boolean {
   return false;
 }
 
+// A recurring series shares one row, so "done" has to be tracked per occurrence
+// date instead of the single `completed` boolean (which only applies to
+// one-off tasks, recurrence === 'none').
+export function isTaskCompletedOnDate(task: StudyTask, dateIso: string): boolean {
+  if (task.recurrence === 'none') return task.completed;
+  return task.completedDates?.includes(dateIso) ?? false;
+}
+
 export function getBrasiliaDate(): Date {
   const now = new Date();
   // Compute UTC time in ms, then subtract 3 hours (UTC-3)

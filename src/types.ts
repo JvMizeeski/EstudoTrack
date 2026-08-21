@@ -18,8 +18,9 @@ export interface StudyTask {
   recurrence: RecurrenceType;
   recurrenceDays?: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
   excludedDates?: string[]; // YYYY-MM-DD dates skipped from an otherwise-recurring series
-  completed: boolean;
+  completed: boolean; // used directly only when recurrence === 'none'
   completedAt?: string;
+  completedDates?: string[]; // YYYY-MM-DD dates marked done, for recurring series (per-occurrence)
   notes: string; // plain-text mirror of notesHtml, kept in sync for search
   notesHtml?: string; // rich text content (Tiptap HTML)
   images: string[]; // base64 or image URLs

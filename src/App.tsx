@@ -336,31 +336,40 @@ export default function App() {
     setToast({ message: `Card "${target.title}" excluído.`, type: 'delete' });
   };
 
-  const handleToggleTaskComplete = (taskId: string, completed: boolean) => {
-    let completedItem: StudyTask | undefined;
-    const updated = tasks.map((t) => {
-      if (t.id === taskId) {
-        completedItem = {
-          ...t,
+  const handleToggleTaskComplete = (taskId: string, completed: boolean, occurrenceDate?: string) => {
+    const target = tasks.find((t) => t.id === taskId);
+    if (!target) return;
+
+    const dateKey = occurrenceDate || target.date;
+    const isRecurring = target.recurrence !== 'none';
+
+    // A recurring series shares one row, so completion has to be tracked per
+    // occurrence date instead of the single `completed` boolean.
+    const completedItem: StudyTask = isRecurring
+      ? {
+          ...target,
+          completedDates: completed
+            ? Array.from(new Set([...(target.completedDates || []), dateKey]))
+            : (target.completedDates || []).filter((d) => d !== dateKey),
+        }
+      : {
+          ...target,
           completed,
           completedAt: completed ? new Date().toISOString() : undefined,
         };
-        SupabaseSyncService.syncTask(completedItem);
-        return completedItem;
-      }
-      return t;
-    });
+
+    const updated = tasks.map((t) => (t.id === taskId ? completedItem : t));
     setTasks(updated);
     DataService.saveTasks(updated, currentUserAccount.id);
+    SupabaseSyncService.syncTask(completedItem);
 
-    const target = tasks.find((t) => t.id === taskId);
-    if (completed && target) {
+    if (completed) {
       awardXP(35, `Conclusão do estudo "${target.title}"`);
       DataService.addAuditLog('Conclusão de Bloco', `Completou com sucesso "${target.title}" (+35 XP)`, currentUserAccount.id);
 
       // Check Spaced Repetition trigger
       if (target.reviewScheduled) {
-        const nextReview = calculateNextSpacedReviewDate(target.reviewStage || 1, target.date);
+        const nextReview = calculateNextSpacedReviewDate(target.reviewStage || 1, dateKey);
         const newNotif: NotificationItem = {
           id: 'notif-' + Date.now(),
           userId: currentUserAccount.id,
