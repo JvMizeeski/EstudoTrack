@@ -86,6 +86,10 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
   const [errorMsg, setErrorMsg] = useState('');
   const [activeTab, setActiveTab] = useState<'identity' | 'notes'>(task?.id ? 'notes' : 'identity');
   const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  // Tiptap only reads `content` on mount, so it never picks up a new card's
+  // notesHtml on its own. Bumping this key forces a fresh editor instance
+  // every time the modal opens for a (possibly different) card.
+  const [editorInstanceKey, setEditorInstanceKey] = useState(0);
 
   useEffect(() => {
     if (isOpen) {
@@ -108,6 +112,8 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
       setTags(task?.tags || []);
       setErrorMsg('');
       setActiveTab(task?.id ? 'notes' : 'identity');
+      setEditorInstanceKey((k) => k + 1);
+      setNewSubjectColor('#8b5cf6');
 
       if (task?.subject) {
         setSubjectSearch(task.subject || '');
@@ -209,9 +215,14 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     }
 
     // If user typed a new subject and didn't click save subject, auto-register it
+    // using the color actually picked in the "Cadastrar" swatch (categoryColor
+    // here would still be whatever subject was pre-selected on open, not the
+    // color the user just chose for this new subject).
+    let finalCategoryColor = categoryColor;
     if (!exactMatchExists && finalSubjectName) {
-      const created = DataService.addSubject(finalSubjectName, categoryColor);
+      const created = DataService.addSubject(finalSubjectName, newSubjectColor);
       finalSubjectName = created.name;
+      finalCategoryColor = created.color;
     }
 
     // Calculate duration in minutes if using specific times
@@ -231,7 +242,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
         id: task?.id,
         title: title.trim(),
         subject: finalSubjectName,
-        categoryColor,
+        categoryColor: finalCategoryColor,
         date,
         startTime: isSpecificTime ? startTime : undefined,
         endTime: isSpecificTime ? endTime : undefined,
@@ -754,6 +765,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
             </div>
 
             <RichNoteEditor
+              key={editorInstanceKey}
               content={notesHtml}
               onChange={(html, plainText) => {
                 setNotesHtml(html);

@@ -742,6 +742,7 @@ export default function App() {
               user={userProfile}
               settings={settings}
               auditLogs={auditLogs}
+              tasks={tasks}
               onSaveProfile={handleSaveProfile}
               onSaveSettings={handleSaveSettings}
               onPreviewPalette={(pal) => setPreviewPalette(pal)}

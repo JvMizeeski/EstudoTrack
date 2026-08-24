@@ -271,6 +271,29 @@ export class DataService {
     return newSubject;
   }
 
+  static updateSubject(id: string, updates: Partial<Pick<SubjectItem, 'name' | 'color'>>, userId?: string): SubjectItem | null {
+    const uid = userId || this.getCurrentUserId();
+    const current = this.getSubjects(uid);
+    const idx = current.findIndex((s) => s.id === id);
+    if (idx === -1) return null;
+
+    const updatedSubject: SubjectItem = {
+      ...current[idx],
+      ...(updates.name !== undefined ? { name: updates.name.trim() } : {}),
+      ...(updates.color !== undefined ? { color: updates.color } : {}),
+    };
+    const updated = [...current];
+    updated[idx] = updatedSubject;
+    this.saveSubjects(updated, uid);
+    return updatedSubject;
+  }
+
+  static deleteSubject(id: string, userId?: string): void {
+    const uid = userId || this.getCurrentUserId();
+    const current = this.getSubjects(uid);
+    this.saveSubjects(current.filter((s) => s.id !== id), uid);
+  }
+
   static getLibrary(userId?: string): LibraryItem[] {
     const uid = userId || this.getCurrentUserId();
     try {

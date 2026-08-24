@@ -14,6 +14,9 @@ import {
   Upload,
   Camera,
   LogOut,
+  BookOpen,
+  Plus,
+  Pencil,
 } from 'lucide-react';
 import {
   UserProfile,
@@ -21,14 +24,18 @@ import {
   ColorPalette,
   ThemeMode,
   AuditLog,
+  StudyTask,
+  SubjectItem,
 } from '../types';
-import { COLOR_PALETTES } from '../lib/theme';
+import { COLOR_PALETTES, DEFAULT_SUBJECT_COLORS } from '../lib/theme';
 import { SupabaseSyncService } from '../lib/supabaseSync';
+import { DataService } from '../lib/storage';
 
 interface SettingsViewProps {
   user: UserProfile;
   settings: AppSettings;
   auditLogs: AuditLog[];
+  tasks: StudyTask[];
   onSaveProfile: (updatedProfile: Partial<UserProfile>) => void;
   onSaveSettings: (updatedSettings: AppSettings) => void;
   onPreviewPalette?: (palette: ColorPalette) => void;
@@ -45,6 +52,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   user,
   settings,
   auditLogs,
+  tasks,
   onSaveProfile,
   onSaveSettings,
   onPreviewPalette,
@@ -77,11 +85,79 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
+  // Subjects (Disciplinas / Matérias) management state
+  const [subjects, setSubjects] = useState<SubjectItem[]>([]);
+  const [newSubjectName, setNewSubjectName] = useState('');
+  const [newSubjectColorPick, setNewSubjectColorPick] = useState(DEFAULT_SUBJECT_COLORS[0]);
+  const [subjectFormError, setSubjectFormError] = useState('');
+  const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
+  const [editSubjectName, setEditSubjectName] = useState('');
+  const [editSubjectColor, setEditSubjectColor] = useState('');
+  const [subjectPendingDelete, setSubjectPendingDelete] = useState<SubjectItem | null>(null);
+
   useEffect(() => {
     setName(user?.name || '');
     setCourseOrGoal(user?.courseOrGoal || '');
     setAvatar(user?.avatar || '');
   }, [user]);
+
+  useEffect(() => {
+    setSubjects(DataService.getSubjects(user.id));
+  }, [user.id]);
+
+  const linkedTaskCount = (subjectName: string) =>
+    tasks.filter((t) => t.subject.trim().toLowerCase() === subjectName.trim().toLowerCase()).length;
+
+  const handleAddSubject = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = newSubjectName.trim();
+    if (!clean) return;
+    const duplicate = subjects.some((s) => s.name.trim().toLowerCase() === clean.toLowerCase());
+    if (duplicate) {
+      setSubjectFormError('Já existe uma disciplina cadastrada com esse nome.');
+      return;
+    }
+    DataService.addSubject(clean, newSubjectColorPick, user.id);
+    setSubjects(DataService.getSubjects(user.id));
+    setNewSubjectName('');
+    setSubjectFormError('');
+  };
+
+  const startEditSubject = (s: SubjectItem) => {
+    setEditingSubjectId(s.id);
+    setEditSubjectName(s.name);
+    setEditSubjectColor(s.color);
+    setSubjectFormError('');
+  };
+
+  const cancelEditSubject = () => {
+    setEditingSubjectId(null);
+    setSubjectFormError('');
+  };
+
+  const saveEditSubject = () => {
+    if (!editingSubjectId) return;
+    const clean = editSubjectName.trim();
+    if (!clean) return;
+    const duplicate = subjects.some(
+      (s) => s.id !== editingSubjectId && s.name.trim().toLowerCase() === clean.toLowerCase()
+    );
+    if (duplicate) {
+      setSubjectFormError('Já existe uma disciplina cadastrada com esse nome.');
+      return;
+    }
+    DataService.updateSubject(editingSubjectId, { name: clean, color: editSubjectColor }, user.id);
+    setSubjects(DataService.getSubjects(user.id));
+    setEditingSubjectId(null);
+    setSubjectFormError('');
+  };
+
+  const confirmDeleteSubject = () => {
+    if (!subjectPendingDelete) return;
+    DataService.deleteSubject(subjectPendingDelete.id, user.id);
+    setSubjects(DataService.getSubjects(user.id));
+    setSubjectPendingDelete(null);
+  };
 
   useEffect(() => {
     setSelectedPalette(colorPalette);
@@ -450,6 +526,175 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </form>
       </section>
 
+      {/* 3. DISCIPLINAS & MATÉRIAS */}
+      <section
+        className={`rounded-3xl border p-5 sm:p-6 shadow-sm transition-all ${
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+        }`}
+      >
+        <div className="flex items-center gap-2.5 pb-4 border-b mb-5" style={{ borderColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(226, 232, 240, 0.9)' }}>
+          <BookOpen className="w-5 h-5" style={{ color: currentPal.previewColor }} />
+          <div>
+            <h2 className={`font-bold text-base ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Disciplinas & Matérias</h2>
+            <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>Cadastre, edite ou remova as disciplinas usadas nos seus cards de estudo</p>
+          </div>
+        </div>
+
+        <div className="space-y-4 text-xs sm:text-sm">
+          {/* New Subject Form */}
+          <form onSubmit={handleAddSubject} className={`p-3.5 rounded-2xl border space-y-3 ${isDark ? 'bg-slate-800/40 border-slate-700/60' : 'bg-slate-50 border-slate-200'}`}>
+            <div className="flex flex-col sm:flex-row gap-2.5 sm:items-center">
+              <input
+                type="text"
+                value={newSubjectName}
+                onChange={(e) => {
+                  setNewSubjectName(e.target.value);
+                  setSubjectFormError('');
+                }}
+                placeholder="Nome da nova disciplina..."
+                className={`flex-1 px-3.5 py-2.5 rounded-xl border font-medium focus:outline-hidden ${
+                  isDark
+                    ? 'bg-slate-900/80 border-slate-700 text-slate-100 placeholder-slate-500 focus:border-purple-500'
+                    : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-purple-500'
+                }`}
+              />
+              <button
+                type="submit"
+                className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-white shadow-xs cursor-pointer transition-transform hover:scale-[1.02] shrink-0"
+                style={{ backgroundColor: currentPal.previewColor }}
+              >
+                <Plus className="w-4 h-4" />
+                <span>Adicionar</span>
+              </button>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className={`text-[11px] mr-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Cor:</span>
+              {DEFAULT_SUBJECT_COLORS.map((c) => (
+                <button
+                  type="button"
+                  key={c}
+                  onClick={() => setNewSubjectColorPick(c)}
+                  className={`w-5 h-5 rounded-full transition-transform cursor-pointer ${
+                    newSubjectColorPick === c ? 'scale-125 ring-2 ring-white ring-offset-1' : 'opacity-70 hover:opacity-100'
+                  }`}
+                  style={{ backgroundColor: c }}
+                  title={c}
+                />
+              ))}
+            </div>
+            {subjectFormError && !editingSubjectId && (
+              <p className="text-[11px] text-rose-500 font-medium">{subjectFormError}</p>
+            )}
+          </form>
+
+          {/* Subjects List */}
+          <div className="space-y-2">
+            {subjects.length === 0 ? (
+              <p className={`text-xs text-center py-4 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                Nenhuma disciplina cadastrada ainda.
+              </p>
+            ) : (
+              subjects.map((s) => {
+                const isEditing = editingSubjectId === s.id;
+                return (
+                  <div
+                    key={s.id}
+                    className={`p-3 rounded-xl border flex items-center gap-3 ${
+                      isDark ? 'bg-slate-800/40 border-slate-700/60' : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    {isEditing ? (
+                      <div className="flex-1 space-y-2.5">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editSubjectName}
+                            onChange={(e) => setEditSubjectName(e.target.value)}
+                            className={`flex-1 px-3 py-2 rounded-lg border font-medium focus:outline-hidden ${
+                              isDark
+                                ? 'bg-slate-900/80 border-slate-700 text-slate-100 focus:border-purple-500'
+                                : 'bg-white border-slate-300 text-slate-900 focus:border-purple-500'
+                            }`}
+                          />
+                          <span
+                            className="w-4 h-4 rounded-full shrink-0"
+                            style={{ backgroundColor: editSubjectColor }}
+                          />
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {DEFAULT_SUBJECT_COLORS.map((c) => (
+                            <button
+                              type="button"
+                              key={c}
+                              onClick={() => setEditSubjectColor(c)}
+                              className={`rounded-full transition-transform cursor-pointer ${
+                                editSubjectColor === c ? 'scale-125 ring-2 ring-white ring-offset-1' : 'opacity-70 hover:opacity-100'
+                              }`}
+                              style={{ backgroundColor: c, width: '1.1rem', height: '1.1rem' }}
+                              title={c}
+                            />
+                          ))}
+                        </div>
+                        {subjectFormError && (
+                          <p className="text-[11px] text-rose-500 font-medium">{subjectFormError}</p>
+                        )}
+                        <div className="flex items-center justify-end gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={cancelEditSubject}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
+                              isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+                            }`}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={saveEditSubject}
+                            className="flex items-center gap-1 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white cursor-pointer"
+                            style={{ backgroundColor: currentPal.previewColor }}
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Salvar</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                        <span className={`flex-1 font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{s.name}</span>
+                        <span className={`text-[11px] shrink-0 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                          {linkedTaskCount(s.name)} card{linkedTaskCount(s.name) === 1 ? '' : 's'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => startEditSubject(s)}
+                          title="Editar disciplina"
+                          className={`p-1.5 rounded-lg cursor-pointer shrink-0 ${
+                            isDark ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-700' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200'
+                          }`}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSubjectPendingDelete(s)}
+                          title="Excluir disciplina"
+                          className="p-1.5 rounded-lg cursor-pointer shrink-0 text-rose-500 hover:bg-rose-500/10"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </section>
+
       {/* 4. HISTÓRICO DE ALTERAÇÕES & ATIVIDADES */}
       <section
         className={`rounded-3xl border p-5 sm:p-6 shadow-sm transition-all ${
@@ -573,6 +818,58 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 shadow-xs cursor-pointer"
               >
                 Sim, Zerar Dados
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Subject Confirmation Modal */}
+      {subjectPendingDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSubjectPendingDelete(null);
+          }}
+        >
+          <div className={`relative w-full max-w-md rounded-3xl border p-6 shadow-2xl ${
+            isDark ? 'border-rose-500/40 bg-slate-900 text-slate-100' : 'border-rose-300 bg-white text-slate-900'
+          }`}>
+            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-500 flex items-center justify-center mb-4">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+
+            <h3 className={`font-bold text-lg mb-1.5 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+              Excluir "{subjectPendingDelete.name}"?
+            </h3>
+
+            {linkedTaskCount(subjectPendingDelete.name) > 0 ? (
+              <p className={`text-xs leading-relaxed mb-6 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                Esta disciplina está vinculada a <strong>{linkedTaskCount(subjectPendingDelete.name)} card{linkedTaskCount(subjectPendingDelete.name) === 1 ? '' : 's'}</strong> de estudo já criado{linkedTaskCount(subjectPendingDelete.name) === 1 ? '' : 's'}.
+                Ao excluir, ela deixará de aparecer na lista de seleção, mas os cards existentes manterão o nome e a cor atuais. Deseja continuar mesmo assim?
+              </p>
+            ) : (
+              <p className={`text-xs leading-relaxed mb-6 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                Nenhum card de estudo está vinculado a esta disciplina. Essa ação é irreversível.
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setSubjectPendingDelete(null)}
+                className={`px-4 py-2 rounded-xl text-xs cursor-pointer ${
+                  isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteSubject}
+                className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-xs cursor-pointer"
+              >
+                Sim, Excluir
               </button>
             </div>
           </div>
