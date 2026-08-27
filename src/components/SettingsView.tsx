@@ -40,8 +40,6 @@ interface SettingsViewProps {
   onSaveSettings: (updatedSettings: AppSettings) => void;
   onPreviewPalette?: (palette: ColorPalette) => void;
   onResetSettingsToDefault: () => void;
-  onResetAllData: () => void;
-  onDeleteAccount?: () => Promise<void> | void;
   onManualSyncSupabase?: () => Promise<void>;
   onLogout?: () => void;
   colorPalette: ColorPalette;
@@ -57,8 +55,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSaveSettings,
   onPreviewPalette,
   onResetSettingsToDefault,
-  onResetAllData,
-  onDeleteAccount,
   onLogout,
   colorPalette,
   themeMode,
@@ -81,9 +77,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [soundEnabled, setSoundEnabled] = useState(settings?.soundEnabled ?? true);
 
   const [settingsSavedFeedback, setSettingsSavedFeedback] = useState(false);
-  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
-  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
-  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   // Subjects (Disciplinas / Matérias) management state
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
@@ -730,100 +723,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       </section>
 
-      {/* 5. ZONA DE PERIGO: ZERAR DADOS & EXCLUIR CONTA */}
-      <section className="rounded-3xl border border-rose-500/30 bg-rose-950/15 p-5 sm:p-6 shadow-xs space-y-6">
-        {/* Opção 1: Zerar dados de estudos */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-rose-500/20">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-rose-500 font-bold text-base">
-              <RotateCcw className="w-5 h-5" />
-              <span>Zerar Dados de Estudos</span>
-            </div>
-            <p className={`text-xs max-w-lg ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-              Esta ação apagará seus cards de estudos, anotações e biblioteca para permitir um recomeço limpo, mantendo sua conta de usuário.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            id="settings-reset-data-btn"
-            onClick={() => setShowResetConfirmModal(true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 shadow-xs cursor-pointer shrink-0 transition-colors"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Zerar Apenas Dados</span>
-          </button>
-        </div>
-
-        {/* Opção 2: Deletar Conta Definitivamente */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-rose-500 font-bold text-base">
-              <Trash2 className="w-5 h-5" />
-              <span>Excluir Conta Definitivamente</span>
-            </div>
-            <p className={`text-xs max-w-lg ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-              Apaga completamente seu cadastro, perfil, usuário no Supabase e todos os dados associados deste dispositivo e da nuvem.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            id="settings-delete-account-btn"
-            onClick={() => setShowDeleteAccountModal(true)}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-xs cursor-pointer shrink-0 transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>Deletar Minha Conta</span>
-          </button>
-        </div>
-      </section>
-
-      {/* Reset Data Confirmation Modal */}
-      {showResetConfirmModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowResetConfirmModal(false);
-          }}
-        >
-          <div className={`relative w-full max-w-md rounded-3xl border p-6 shadow-2xl ${
-            isDark ? 'border-amber-500/40 bg-slate-900 text-slate-100' : 'border-amber-300 bg-white text-slate-900'
-          }`}>
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-500 flex items-center justify-center mb-4">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-
-            <h3 className={`font-bold text-lg mb-1.5 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Zerar dados de estudos?</h3>
-            <p className={`text-xs leading-relaxed mb-6 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-              Todos os seus blocos de estudo, anotações de aula, fotos anexadas e dados do ranking serão restaurados ao estado inicial. Essa ação é irreversível.
-            </p>
-
-            <div className="flex justify-end gap-2.5">
-              <button
-                type="button"
-                onClick={() => setShowResetConfirmModal(false)}
-                className={`px-4 py-2 rounded-xl text-xs cursor-pointer ${
-                  isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onResetAllData();
-                  setShowResetConfirmModal(false);
-                }}
-                className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 shadow-xs cursor-pointer"
-              >
-                Sim, Zerar Dados
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Delete Subject Confirmation Modal */}
       {subjectPendingDelete && (
         <div
@@ -876,72 +775,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         </div>
       )}
 
-      {/* Delete Account Confirmation Modal */}
-      {showDeleteAccountModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !isDeletingAccount) setShowDeleteAccountModal(false);
-          }}
-        >
-          <div className={`relative w-full max-w-md rounded-3xl border p-6 shadow-2xl ${
-            isDark ? 'border-rose-500/40 bg-slate-900 text-slate-100' : 'border-rose-300 bg-white text-slate-900'
-          }`}>
-            <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-500 flex items-center justify-center mb-4">
-              <Trash2 className="w-6 h-6" />
-            </div>
-
-            <h3 className={`font-bold text-lg mb-1.5 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-              Excluir conta definitivamente?
-            </h3>
-            <p className={`text-xs leading-relaxed mb-6 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-              Você está prestes a apagar o usuário <strong>{user.name}</strong>, todas as matérias, cards de estudo e anotações. Você será deslogado e precisará criar uma nova conta para entrar novamente.
-            </p>
-
-            <div className="flex justify-end gap-2.5">
-              <button
-                type="button"
-                disabled={isDeletingAccount}
-                onClick={() => setShowDeleteAccountModal(false)}
-                className={`px-4 py-2 rounded-xl text-xs cursor-pointer ${
-                  isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                id="confirm-delete-account-btn"
-                disabled={isDeletingAccount}
-                onClick={async () => {
-                  if (onDeleteAccount) {
-                    setIsDeletingAccount(true);
-                    try {
-                      await onDeleteAccount();
-                    } finally {
-                      setIsDeletingAccount(false);
-                      setShowDeleteAccountModal(false);
-                    }
-                  }
-                }}
-                className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 shadow-xs cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-              >
-                {isDeletingAccount ? (
-                  <>
-                    <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                    <span>Excluindo...</span>
-                  </>
-                ) : (
-                  <>
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Sim, Excluir Minha Conta</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

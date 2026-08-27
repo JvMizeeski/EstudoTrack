@@ -430,25 +430,4 @@ export class DataService {
     this.saveAuditLogs([newLog, ...logs], uid);
   }
 
-  static deleteUserAccount(userId: string): void {
-    this.resetAllDataForUser(userId);
-    const users = this.getUsers().filter((u) => u.id !== userId);
-    this.saveUsers(users);
-    const currentAuth = this.getAuthenticatedUserId();
-    if (currentAuth === userId) {
-      this.setAuthenticatedUserId(null);
-    }
-  }
-
-  static resetAllDataForUser(userId?: string): void {
-    const uid = userId || this.getCurrentUserId();
-    localStorage.removeItem(STORAGE_KEYS.TASKS + uid);
-    localStorage.removeItem(STORAGE_KEYS.SUBJECTS + uid);
-    localStorage.removeItem(STORAGE_KEYS.LIBRARY + uid);
-    localStorage.removeItem(STORAGE_KEYS.BADGES + uid);
-    localStorage.removeItem(STORAGE_KEYS.CHALLENGES + uid);
-    localStorage.removeItem(STORAGE_KEYS.SETTINGS + uid);
-    localStorage.removeItem(STORAGE_KEYS.NOTIFICATIONS + uid);
-    localStorage.removeItem(STORAGE_KEYS.AUDIT_LOGS + uid);
-  }
 }

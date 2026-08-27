@@ -693,31 +693,4 @@ export class SupabaseSyncService {
     return url || (typeof imageSource === 'string' ? imageSource : URL.createObjectURL(imageSource));
   }
 
-  // ==========================================
-  // 6. DELETE USER ACCOUNT (CLOUD CLEANUP)
-  // ==========================================
-  static async deleteUserAccount(userId: string): Promise<{ ok: boolean; error?: string }> {
-    if (!isSupabaseConfigured()) return { ok: true };
-    try {
-      // Delete user's records across all tables
-      await supabase.from('study_tasks').delete().eq('user_id', userId);
-      await supabase.from('library_items').delete().eq('user_id', userId);
-      await supabase.from('subjects').delete().eq('user_id', userId);
-      await supabase.from('user_badges').delete().eq('user_id', userId);
-      await supabase.from('user_challenges').delete().eq('user_id', userId);
-      await supabase.from('notifications').delete().eq('user_id', userId);
-      await supabase.from('audit_logs').delete().eq('user_id', userId);
-      await supabase.from('study_images').delete().eq('user_id', userId);
-      
-      const { error } = await supabase.from('profiles').delete().eq('id', userId);
-      if (error) {
-        console.warn('[Supabase deleteUserAccount error]', error);
-        return { ok: false, error: error.message };
-      }
-      return { ok: true };
-    } catch (err: any) {
-      console.warn('[Supabase deleteUserAccount exception]', err);
-      return { ok: false, error: err?.message };
-    }
-  }
 }

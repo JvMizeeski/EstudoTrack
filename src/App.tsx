@@ -153,13 +153,28 @@ export default function App() {
       if (remoteProfile) {
         setUserProfile(remoteProfile);
       }
+      // An empty remote result can mean "this account really has nothing yet",
+      // but it can just as easily mean a transient fetch problem that Supabase
+      // reported as zero rows instead of a real error. Never let that silently
+      // wipe out a local cache that already has data — only accept the remote
+      // list when it isn't empty, or when there was nothing local to lose.
+      const localTasksNow = DataService.getTasks(userId);
       if (remoteTasks !== null) {
-        setTasks(remoteTasks);
-        DataService.saveTasks(remoteTasks, userId);
+        if (remoteTasks.length > 0 || localTasksNow.length === 0) {
+          setTasks(remoteTasks);
+          DataService.saveTasks(remoteTasks, userId);
+        } else {
+          console.warn('[Supabase Sync] Remote returned 0 tasks but local cache has data — keeping local cache, skipping overwrite.');
+        }
       }
+      const localLibNow = DataService.getLibrary(userId);
       if (remoteLib !== null) {
-        setLibraryItems(remoteLib);
-        DataService.saveLibrary(remoteLib, userId);
+        if (remoteLib.length > 0 || localLibNow.length === 0) {
+          setLibraryItems(remoteLib);
+          DataService.saveLibrary(remoteLib, userId);
+        } else {
+          console.warn('[Supabase Sync] Remote returned 0 library items but local cache has data — keeping local cache, skipping overwrite.');
+        }
       }
       setRankingPeers(leaderboard);
     } catch (err) {
@@ -497,11 +512,6 @@ export default function App() {
     setActiveTab(tab);
   };
 
-  const handleResetAllData = () => {
-    DataService.resetAllDataForUser(currentUserAccount.id);
-    reloadUserData(currentUserAccount.id);
-  };
-
   // 6. Multi-user Auth Handlers
   const handleLogin = async (usernameOrEmail: string, pass: string): Promise<boolean> => {
     const found = DataService.findUserByName(usernameOrEmail);
@@ -549,18 +559,6 @@ export default function App() {
 
   const handleLogout = () => {
     DataService.logout();
-    setIsAuthenticated(false);
-  };
-
-  const handleDeleteAccount = async () => {
-    const targetUserId = currentUserAccount.id;
-    // 1. Delete from Supabase cloud
-    await SupabaseSyncService.deleteUserAccount(targetUserId);
-    // 2. Delete locally
-    DataService.deleteUserAccount(targetUserId);
-    // 3. Clear auth and state
-    const remainingUsers = DataService.getUsers();
-    setAvailableUsers(remainingUsers);
     setIsAuthenticated(false);
   };
 
@@ -747,8 +745,6 @@ export default function App() {
               onSaveSettings={handleSaveSettings}
               onPreviewPalette={(pal) => setPreviewPalette(pal)}
               onResetSettingsToDefault={handleResetSettingsToDefault}
-              onResetAllData={handleResetAllData}
-              onDeleteAccount={handleDeleteAccount}
               onManualSyncSupabase={handleManualSyncSupabase}
               onLogout={handleLogout}
               colorPalette={activePalette}
