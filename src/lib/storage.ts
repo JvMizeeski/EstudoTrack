@@ -77,6 +77,11 @@ export function getInitialSeedAudit(_userId: string): AuditLog[] {
 
 // Storage Access & Multi-user state handlers
 export class DataService {
+  // Registered by App.tsx on mount so a failed localStorage write (quota
+  // exceeded, private-browsing restrictions, etc.) surfaces to the user
+  // instead of only ever reaching a console nobody's watching.
+  static onStorageError: ((message: string) => void) | null = null;
+
   // localStorage is a best-effort cache — Supabase is the source of truth for synced
   // accounts. A quota-exceeded write (e.g. from accumulated base64 images) must never
   // abort the caller's flow (Supabase sync, toasts, modal close, etc).
@@ -85,6 +90,27 @@ export class DataService {
       localStorage.setItem(key, value);
     } catch (err) {
       console.warn(`[DataService] Failed to persist "${key}" to localStorage (quota exceeded?)`, err);
+      this.onStorageError?.('Não foi possível salvar localmente (armazenamento cheio).');
+    }
+  }
+
+  // Warns loudly (with a stack trace) whenever a save call is about to
+  // replace a non-empty stored list with an empty one — the exact shape of
+  // the regression that once silently wiped out a user's cards. This is a
+  // detection aid, not a guard: the actual "don't overwrite local with an
+  // incomplete remote fetch" protection lives in App.tsx's fetchRemoteData.
+  private static warnIfWipingExisting(key: string): void {
+    try {
+      const existingRaw = localStorage.getItem(key);
+      const existing = existingRaw ? JSON.parse(existingRaw) : [];
+      if (Array.isArray(existing) && existing.length > 0) {
+        console.warn(
+          `[DataService] Saving an EMPTY array over "${key}", which currently holds ${existing.length} item(s) — this looks like a regression that would wipe local data.`,
+          new Error().stack
+        );
+      }
+    } catch {
+      // ignore
     }
   }
 
@@ -102,7 +128,13 @@ export class DataService {
         this.safeSetItem(STORAGE_KEYS.AUTHENTICATED_USER_ID, id);
         this.safeSetItem(STORAGE_KEYS.CURRENT_USER_ID, id);
       } else {
+        // Clearing only AUTHENTICATED_USER_ID left CURRENT_USER_ID pointing
+        // at the previous account — harmless while logged out (the login
+        // screen doesn't read it), but a real footgun the moment anything
+        // reads getCurrentUser()/getCurrentUserId() before the next login
+        // finishes. These two keys must never be allowed to disagree.
         localStorage.removeItem(STORAGE_KEYS.AUTHENTICATED_USER_ID);
+        localStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
       }
     } catch {
       // ignore
@@ -146,18 +178,15 @@ export class DataService {
     } catch {
       // ignore
     }
-    // Default clean user account
-    const defaultUser: StoredUserAccount = {
-      id: 'user-default-1',
-      name: 'Estudante',
-      email: '',
-      passwordHash: '',
-      avatar: '',
-      courseOrGoal: '',
-      createdAt: new Date().toISOString(),
-    };
-    this.saveUsers([defaultUser]);
-    return [defaultUser];
+    // No accounts registry yet (or it's corrupted) — return an empty list
+    // rather than fabricating and persisting a 'user-default-1' placeholder.
+    // That placeholder used to become a real, permanent phantom identity:
+    // every getTasks/saveTasks call defaults to getCurrentUserId(), which
+    // fell back to this fabricated id, so data would silently start being
+    // read/written under an account nobody ever actually registered. An
+    // empty list forces the caller (App.tsx's boot check) to route to login
+    // instead.
+    return [];
   }
 
   static saveUsers(users: StoredUserAccount[]): void {
@@ -168,9 +197,9 @@ export class DataService {
     const current = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
     if (current) return current;
     const users = this.getUsers();
-    const id = users[0]?.id || 'user-default-1';
-    this.safeSetItem(STORAGE_KEYS.CURRENT_USER_ID, id);
-    return id;
+    if (users.length === 0) return '';
+    this.safeSetItem(STORAGE_KEYS.CURRENT_USER_ID, users[0].id);
+    return users[0].id;
   }
 
   static setCurrentUserId(id: string): void {
@@ -182,13 +211,16 @@ export class DataService {
     const users = this.getUsers();
     const user = users.find((u) => u.id === id);
     if (user) return user;
-    return users[0] || {
-      id: 'user-default-1',
-      name: 'Estudante Focado',
-      email: 'estudante@estudoflow.com',
-      passwordHash: '123456',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-      courseOrGoal: 'Estudos Acadêmicos',
+    // No matching local account — this ephemeral placeholder is never
+    // persisted. The caller is expected to route to login (see App.tsx's
+    // boot check) instead of silently operating under a fabricated identity.
+    return {
+      id: '',
+      name: '',
+      email: '',
+      passwordHash: '',
+      avatar: '',
+      courseOrGoal: '',
       createdAt: new Date().toISOString(),
     };
   }
@@ -218,7 +250,29 @@ export class DataService {
 
   static saveTasks(tasks: StudyTask[], userId?: string): void {
     const uid = userId || this.getCurrentUserId();
-    this.safeSetItem(STORAGE_KEYS.TASKS + uid, JSON.stringify(tasks));
+    const key = STORAGE_KEYS.TASKS + uid;
+    if (tasks.length === 0) {
+      this.warnIfWipingExisting(key);
+    }
+    // Defensive backstop: a base64 data: URI should never reach here — it
+    // should have been uploaded to Storage first (see TaskEditorModal /
+    // RichNoteEditor) — but if one slips through, drop it from the array
+    // rather than let a single huge string blow the localStorage quota for
+    // every other task sharing this key.
+    const sanitized = tasks.map((t) => {
+      const cleanImages = (t.images || []).filter((img) => {
+        if (typeof img === 'string' && img.startsWith('data:')) {
+          console.warn(`[DataService] Dropped a data: URI from task "${t.id}" images before saving — it should have been uploaded to Storage first.`);
+          return false;
+        }
+        return true;
+      });
+      if (t.notesHtml && t.notesHtml.includes('src="data:')) {
+        console.warn(`[DataService] Task "${t.id}" notesHtml still contains an embedded data: URI image — it should have been uploaded to Storage before saving.`);
+      }
+      return cleanImages.length !== (t.images || []).length ? { ...t, images: cleanImages } : t;
+    });
+    this.safeSetItem(key, JSON.stringify(sanitized));
   }
 
   static getSubjects(userId?: string): SubjectItem[] {
@@ -237,7 +291,7 @@ export class DataService {
     tasks.forEach((t) => {
       if (t.subject && !map.has(t.subject.toLowerCase())) {
         map.set(t.subject.toLowerCase(), {
-          id: 'subj-' + Math.random().toString(36).substring(2, 9),
+          id: crypto.randomUUID(),
           name: t.subject,
           color: t.categoryColor || DEFAULT_SUBJECT_COLORS[map.size % DEFAULT_SUBJECT_COLORS.length],
         });
@@ -262,7 +316,7 @@ export class DataService {
 
     const assignedColor = color || DEFAULT_SUBJECT_COLORS[current.length % DEFAULT_SUBJECT_COLORS.length];
     const newSubject: SubjectItem = {
-      id: 'subj-' + Date.now(),
+      id: crypto.randomUUID(),
       name: name.trim(),
       color: assignedColor,
     };
@@ -311,7 +365,11 @@ export class DataService {
 
   static saveLibrary(items: LibraryItem[], userId?: string): void {
     const uid = userId || this.getCurrentUserId();
-    this.safeSetItem(STORAGE_KEYS.LIBRARY + uid, JSON.stringify(items));
+    const key = STORAGE_KEYS.LIBRARY + uid;
+    if (items.length === 0) {
+      this.warnIfWipingExisting(key);
+    }
+    this.safeSetItem(key, JSON.stringify(items));
   }
 
   static getBadges(userId?: string): Badge[] {
@@ -421,7 +479,7 @@ export class DataService {
     const uid = userId || this.getCurrentUserId();
     const logs = this.getAuditLogs(uid);
     const newLog: AuditLog = {
-      id: 'audit-' + Date.now(),
+      id: crypto.randomUUID(),
       userId: uid,
       action,
       details,

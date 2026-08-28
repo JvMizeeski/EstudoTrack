@@ -12,6 +12,9 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  Cloud,
+  CloudOff,
+  RefreshCw,
 } from 'lucide-react';
 import { UserProfile, ColorPalette, ThemeMode } from '../types';
 import { COLOR_PALETTES } from '../lib/theme';
@@ -32,6 +35,10 @@ interface SidebarProps {
   isRealtimeActive?: boolean;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  isOnline?: boolean;
+  isSyncingNow?: boolean;
+  pendingSyncCount?: number;
+  onForceSync?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -48,7 +55,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isRealtimeActive = false,
   isCollapsed = false,
   onToggleCollapse,
+  isOnline = true,
+  isSyncingNow = false,
+  pendingSyncCount = 0,
+  onForceSync,
 }) => {
+  const syncState: 'offline' | 'syncing' | 'pending' | 'synced' = !isOnline
+    ? 'offline'
+    : isSyncingNow
+    ? 'syncing'
+    : pendingSyncCount > 0
+    ? 'pending'
+    : 'synced';
+
+  const syncLabel = {
+    offline: 'Offline',
+    syncing: 'Sincronizando...',
+    pending: `${pendingSyncCount} pendente${pendingSyncCount === 1 ? '' : 's'}`,
+    synced: 'Sincronizado',
+  }[syncState];
+
+  const syncIconColor = {
+    offline: 'text-slate-500',
+    syncing: 'text-amber-400',
+    pending: 'text-amber-400',
+    synced: 'text-emerald-500',
+  }[syncState];
   const isDark = themeMode === 'dark';
   const pal = COLOR_PALETTES[colorPalette] || COLOR_PALETTES.purple;
 
@@ -217,6 +249,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
             );
           })}
         </nav>
+      </div>
+
+      {/* Sync Status Indicator */}
+      <div className={isCollapsed ? 'flex justify-center pt-2' : 'pt-2'}>
+        <button
+          type="button"
+          id="sidebar-sync-indicator"
+          onClick={onForceSync}
+          title={`${syncLabel} — clique para forçar sincronização`}
+          className={`flex items-center gap-1.5 rounded-xl border cursor-pointer transition-colors ${
+            isCollapsed ? 'w-12 h-10 justify-center' : 'w-full px-3 py-2 text-[11px] font-semibold'
+          } ${
+            isDark ? 'bg-slate-800/40 border-slate-700/60 hover:bg-slate-800' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
+          }`}
+        >
+          {syncState === 'syncing' ? (
+            <RefreshCw className={`w-3.5 h-3.5 shrink-0 animate-spin ${syncIconColor}`} />
+          ) : syncState === 'offline' ? (
+            <CloudOff className={`w-3.5 h-3.5 shrink-0 ${syncIconColor}`} />
+          ) : (
+            <Cloud className={`w-3.5 h-3.5 shrink-0 ${syncIconColor}`} />
+          )}
+          {!isCollapsed && (
+            <span className={isDark ? 'text-slate-300' : 'text-slate-700'}>{syncLabel}</span>
+          )}
+        </button>
       </div>
 
       {/* Bottom Profile & Settings Controls */}

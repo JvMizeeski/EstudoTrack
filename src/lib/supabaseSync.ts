@@ -6,7 +6,6 @@ import {
   SubjectItem,
   RankingUser,
 } from '../types';
-import { StoredUserAccount } from './storage';
 import { calculateLevelFromXP } from './gamification';
 import { RealtimeChannel } from '@supabase/supabase-js';
 
@@ -20,6 +19,10 @@ export interface RealtimeHandlers {
   onProfileUpdate?: (profile: UserProfile) => void;
   onSubjectsChange?: (subjects: SubjectItem[]) => void;
   onStatusChange?: (status: { connected: boolean; message: string }) => void;
+  /** Fired after a dropped realtime connection re-subscribes successfully —
+   * the right moment to re-pull remote state and flush the outbox, since
+   * anything that changed while disconnected was missed. */
+  onReconnected?: () => void;
 }
 
 export interface SyncResponse {
@@ -27,6 +30,42 @@ export interface SyncResponse {
   message?: string;
   error?: string;
   code?: string;
+}
+
+const MAX_COLUMN_RETRY_ATTEMPTS = 5;
+
+// PostgREST reports a missing column as PGRST204 with a message like
+// `Could not find the 'notes_html' column of 'study_tasks' in the schema
+// cache`, and rejects the WHOLE upsert — every other field goes with it.
+// Rather than silently losing the entire row because one column drifted
+// from the live schema, drop just that key and retry, so the rest of the
+// write still lands.
+async function upsertWithColumnRetry(
+  table: string,
+  payload: Record<string, any>,
+  onConflict: string
+): Promise<{ error: { message: string; code?: string } | null }> {
+  let body: Record<string, any> = { ...payload };
+  for (let attempt = 0; attempt < MAX_COLUMN_RETRY_ATTEMPTS; attempt++) {
+    const { error } = await supabase.from(table).upsert(body, { onConflict });
+    if (!error) return { error: null };
+
+    const isMissingColumn = error.code === 'PGRST204' || error.message?.toLowerCase().includes('column');
+    if (!isMissingColumn) return { error };
+
+    const match = /Could not find the '([^']+)' column/i.exec(error.message || '');
+    const badColumn = match?.[1];
+    if (!badColumn || !(badColumn in body)) return { error };
+
+    console.warn(`[Supabase] Column "${badColumn}" missing on "${table}" (schema drift) — retrying upsert without it.`);
+    const { [badColumn]: _dropped, ...rest } = body;
+    body = rest;
+  }
+  return {
+    error: {
+      message: `Falha ao sincronizar com "${table}" após ${MAX_COLUMN_RETRY_ATTEMPTS} tentativas removendo colunas ausentes do schema.`,
+    },
+  };
 }
 
 export class SupabaseSyncService {
@@ -96,148 +135,175 @@ export class SupabaseSyncService {
       return () => {};
     }
 
-    if (this.activeChannel) {
-      supabase.removeChannel(this.activeChannel);
-      this.activeChannel = null;
-    }
+    let stopped = false;
+    let reconnectAttempts = 0;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const channelName = `realtime-user-${userId}-${Date.now()}`;
-    const channel = supabase.channel(channelName);
+    const connect = () => {
+      if (stopped) return;
 
-    // 1. Study Tasks Realtime
-    channel.on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'study_tasks',
-        filter: `user_id=eq.${userId}`,
-      },
-      (payload) => {
-        if (payload.eventType === 'DELETE') {
-          const oldId = payload.old?.id;
-          if (oldId && handlers.onTaskDelete) {
-            handlers.onTaskDelete(oldId);
+      if (this.activeChannel) {
+        supabase.removeChannel(this.activeChannel);
+        this.activeChannel = null;
+      }
+
+      const channelName = `realtime-user-${userId}-${Date.now()}`;
+      const channel = supabase.channel(channelName);
+
+      // 1. Study Tasks Realtime
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'study_tasks', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const oldId = payload.old?.id;
+            if (oldId && handlers.onTaskDelete) {
+              handlers.onTaskDelete(oldId);
+            }
+          } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const row = payload.new as any;
+            if (row && handlers.onTaskUpsert) {
+              const mappedTask: StudyTask = {
+                id: row.id,
+                userId: row.user_id,
+                title: row.title,
+                subject: row.subject,
+                categoryColor: row.category_color,
+                date: row.date,
+                startTime: row.start_time || undefined,
+                endTime: row.end_time || undefined,
+                durationMinutes: row.duration_minutes || 0,
+                isSpecificTime: Boolean(row.is_specific_time),
+                recurrence: row.recurrence || 'none',
+                recurrenceDays: row.recurrence_days || [],
+                excludedDates: row.excluded_dates || [],
+                completed: Boolean(row.completed),
+                completedAt: row.completed_at || undefined,
+                completedDates: row.completed_dates || [],
+                notes: row.notes || '',
+                notesHtml: row.notes_html || undefined,
+                images: row.images || [],
+                reviewScheduled: Boolean(row.review_scheduled),
+                nextReviewDate: row.next_review_date || undefined,
+                reviewStage: row.review_stage || 1,
+                priority: row.priority || 'medium',
+                tags: row.tags || [],
+                createdAt: row.created_at || new Date().toISOString(),
+              };
+              handlers.onTaskUpsert(mappedTask);
+            }
           }
-        } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const row = payload.new as any;
-          if (row && handlers.onTaskUpsert) {
-            const mappedTask: StudyTask = {
+        }
+      );
+
+      // 2. Library Items Realtime
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'library_items', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          if (payload.eventType === 'DELETE') {
+            const oldId = payload.old?.id;
+            if (oldId && handlers.onLibraryDelete) {
+              handlers.onLibraryDelete(oldId);
+            }
+          } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const row = payload.new as any;
+            if (row && handlers.onLibraryUpsert) {
+              const mappedItem: LibraryItem = {
+                id: row.id,
+                userId: row.user_id,
+                title: row.title,
+                author: row.author,
+                type: row.type || 'book',
+                status: row.status || 'want_to_read',
+                progress: row.progress || 0,
+                totalUnits: row.total_units || undefined,
+                unitLabel: row.unit_label || 'páginas',
+                rating: row.rating || 0,
+                notes: row.notes || '',
+                coverUrl: row.cover_url || undefined,
+                tags: row.tags || [],
+                dateStarted: row.date_started || undefined,
+                dateFinished: row.date_finished || undefined,
+                createdAt: row.created_at || new Date().toISOString(),
+              };
+              handlers.onLibraryUpsert(mappedItem);
+            }
+          }
+        }
+      );
+
+      // 3. Profiles Realtime
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` },
+        (payload) => {
+          if (payload.new && handlers.onProfileUpdate) {
+            const row = payload.new as any;
+            const mappedProfile: UserProfile = {
               id: row.id,
-              userId: row.user_id,
-              title: row.title,
-              subject: row.subject,
-              categoryColor: row.category_color,
-              date: row.date,
-              startTime: row.start_time || undefined,
-              endTime: row.end_time || undefined,
-              durationMinutes: row.duration_minutes || 0,
-              isSpecificTime: Boolean(row.is_specific_time),
-              recurrence: row.recurrence || 'none',
-              recurrenceDays: row.recurrence_days || [],
-              excludedDates: row.excluded_dates || [],
-              completed: Boolean(row.completed),
-              completedAt: row.completed_at || undefined,
-              completedDates: row.completed_dates || [],
-              notes: row.notes || '',
-              notesHtml: row.notes_html || undefined,
-              images: row.images || [],
-              reviewScheduled: Boolean(row.review_scheduled),
-              nextReviewDate: row.next_review_date || undefined,
-              reviewStage: row.review_stage || 1,
-              priority: row.priority || 'medium',
-              tags: row.tags || [],
+              name: row.name,
+              email: row.email || '',
+              avatar: row.avatar || '',
+              courseOrGoal: row.course_or_goal || '',
+              level: row.level || 1,
+              xp: row.xp || 0,
+              streakDays: row.streak_days || 0,
+              lastActiveDate: row.last_active_date || new Date().toISOString().split('T')[0],
+              targetWeeklyMinutes: row.target_weekly_minutes || 300,
               createdAt: row.created_at || new Date().toISOString(),
             };
-            handlers.onTaskUpsert(mappedTask);
+            handlers.onProfileUpdate(mappedProfile);
           }
         }
-      }
-    );
+      );
 
-    // 2. Library Items Realtime
-    channel.on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'library_items',
-        filter: `user_id=eq.${userId}`,
-      },
-      (payload) => {
-        if (payload.eventType === 'DELETE') {
-          const oldId = payload.old?.id;
-          if (oldId && handlers.onLibraryDelete) {
-            handlers.onLibraryDelete(oldId);
-          }
-        } else if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-          const row = payload.new as any;
-          if (row && handlers.onLibraryUpsert) {
-            const mappedItem: LibraryItem = {
-              id: row.id,
-              userId: row.user_id,
-              title: row.title,
-              author: row.author,
-              type: row.type || 'book',
-              status: row.status || 'want_to_read',
-              progress: row.progress || 0,
-              totalUnits: row.total_units || undefined,
-              unitLabel: row.unit_label || 'páginas',
-              rating: row.rating || 0,
-              notes: row.notes || '',
-              coverUrl: row.cover_url || undefined,
-              tags: row.tags || [],
-              dateStarted: row.date_started || undefined,
-              dateFinished: row.date_finished || undefined,
-              createdAt: row.created_at || new Date().toISOString(),
-            };
-            handlers.onLibraryUpsert(mappedItem);
-          }
+      // 4. Subjects Realtime — the row payload alone isn't enough context to
+      // upsert/remove a single entry safely against local dedupe-by-name
+      // logic, so just re-pull the full authoritative list for this user.
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'subjects', filter: `user_id=eq.${userId}` },
+        async () => {
+          if (!handlers.onSubjectsChange) return;
+          const { data, error } = await supabase.from('subjects').select('*').eq('user_id', userId);
+          if (error || !data) return;
+          handlers.onSubjectsChange(data.map((row: any) => ({ id: row.id, name: row.name, color: row.color })));
         }
-      }
-    );
+      );
 
-    // 3. Profiles Realtime
-    channel.on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'profiles',
-        filter: `id=eq.${userId}`,
-      },
-      (payload) => {
-        if (payload.new && handlers.onProfileUpdate) {
-          const row = payload.new as any;
-          const mappedProfile: UserProfile = {
-            id: row.id,
-            name: row.name,
-            email: row.email || '',
-            avatar: row.avatar || '',
-            courseOrGoal: row.course_or_goal || '',
-            level: row.level || 1,
-            xp: row.xp || 0,
-            streakDays: row.streak_days || 0,
-            lastActiveDate: row.last_active_date || new Date().toISOString().split('T')[0],
-            targetWeeklyMinutes: row.target_weekly_minutes || 300,
-            createdAt: row.created_at || new Date().toISOString(),
-          };
-          handlers.onProfileUpdate(mappedProfile);
+      channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          const wasReconnect = reconnectAttempts > 0;
+          reconnectAttempts = 0;
+          handlers.onStatusChange?.({ connected: true, message: 'Tempo real ativo e sincronizado' });
+          if (wasReconnect) {
+            handlers.onReconnected?.();
+          }
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          handlers.onStatusChange?.({ connected: false, message: 'Tentando reconectar tempo real...' });
+          scheduleReconnect();
         }
-      }
-    );
+      });
 
-    channel.subscribe((status) => {
-      if (status === 'SUBSCRIBED') {
-        handlers.onStatusChange?.({ connected: true, message: 'Tempo real ativo e sincronizado' });
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        handlers.onStatusChange?.({ connected: false, message: 'Tentando reconectar tempo real...' });
-      }
-    });
+      this.activeChannel = channel;
+    };
 
-    this.activeChannel = channel;
+    const scheduleReconnect = () => {
+      if (stopped || reconnectTimer) return;
+      reconnectAttempts += 1;
+      const delay = Math.min(2000 * Math.pow(2, reconnectAttempts), 60000);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, delay);
+    };
+
+    connect();
 
     return () => {
+      stopped = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
       if (this.activeChannel) {
         supabase.removeChannel(this.activeChannel);
         this.activeChannel = null;
@@ -367,7 +433,6 @@ export class SupabaseSyncService {
       return { ok: false, message: 'Supabase não configurado.' };
     }
     try {
-      // First try upserting with password_hash if provided
       const payload: Record<string, any> = {
         id: profile.id,
         name: profile.name,
@@ -381,19 +446,11 @@ export class SupabaseSyncService {
         target_weekly_minutes: profile.targetWeeklyMinutes,
         updated_at: new Date().toISOString(),
       };
-
       if (password) {
         payload.password_hash = password;
       }
 
-      let { error } = await supabase.from('profiles').upsert(payload, { onConflict: 'id' });
-
-      // If failed due to column password_hash missing, retry without it
-      if (error && (error.code === '42703' || error.message.includes('password_hash'))) {
-        delete payload.password_hash;
-        const retryResult = await supabase.from('profiles').upsert(payload, { onConflict: 'id' });
-        error = retryResult.error;
-      }
+      const { error } = await upsertWithColumnRetry('profiles', payload, 'id');
 
       if (error) {
         const isTableMissing =
@@ -476,9 +533,10 @@ export class SupabaseSyncService {
   }
 
   static async syncTask(task: StudyTask): Promise<SyncResponse> {
-    if (!isSupabaseConfigured()) return { ok: false };
+    if (!isSupabaseConfigured()) return { ok: false, error: 'Supabase não configurado.' };
     try {
-      const { error } = await supabase.from('study_tasks').upsert(
+      const { error } = await upsertWithColumnRetry(
+        'study_tasks',
         {
           id: task.id,
           user_id: task.userId,
@@ -506,11 +564,11 @@ export class SupabaseSyncService {
           tags: task.tags || [],
           updated_at: new Date().toISOString(),
         },
-        { onConflict: 'id' }
+        'id'
       );
       if (error) {
         console.warn('[Supabase syncTask notice]', error.message || error);
-        return { ok: false, error: error.message };
+        return { ok: false, error: error.message, code: error.code };
       }
       return { ok: true };
     } catch (err: any) {
@@ -519,13 +577,18 @@ export class SupabaseSyncService {
     }
   }
 
-  static async deleteTask(taskId: string): Promise<void> {
-    if (!isSupabaseConfigured()) return;
+  static async deleteTask(taskId: string): Promise<SyncResponse> {
+    if (!isSupabaseConfigured()) return { ok: false, error: 'Supabase não configurado.' };
     try {
       const { error } = await supabase.from('study_tasks').delete().eq('id', taskId);
-      if (error) console.warn('[Supabase deleteTask error]', error);
-    } catch (err) {
+      if (error) {
+        console.warn('[Supabase deleteTask error]', error);
+        return { ok: false, error: error.message };
+      }
+      return { ok: true };
+    } catch (err: any) {
       console.warn('[Supabase deleteTask error]', err);
+      return { ok: false, error: err?.message };
     }
   }
 
@@ -568,9 +631,10 @@ export class SupabaseSyncService {
   }
 
   static async syncLibraryItem(item: LibraryItem): Promise<SyncResponse> {
-    if (!isSupabaseConfigured()) return { ok: false };
+    if (!isSupabaseConfigured()) return { ok: false, error: 'Supabase não configurado.' };
     try {
-      const { error } = await supabase.from('library_items').upsert(
+      const { error } = await upsertWithColumnRetry(
+        'library_items',
         {
           id: item.id,
           user_id: item.userId,
@@ -589,11 +653,11 @@ export class SupabaseSyncService {
           date_finished: item.dateFinished || null,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: 'id' }
+        'id'
       );
       if (error) {
         console.warn('[Supabase syncLibraryItem notice]', error.message || error);
-        return { ok: false, error: error.message };
+        return { ok: false, error: error.message, code: error.code };
       }
       return { ok: true };
     } catch (err: any) {
@@ -602,13 +666,18 @@ export class SupabaseSyncService {
     }
   }
 
-  static async deleteLibraryItem(itemId: string): Promise<void> {
-    if (!isSupabaseConfigured()) return;
+  static async deleteLibraryItem(itemId: string): Promise<SyncResponse> {
+    if (!isSupabaseConfigured()) return { ok: false, error: 'Supabase não configurado.' };
     try {
       const { error } = await supabase.from('library_items').delete().eq('id', itemId);
-      if (error) console.warn('[Supabase deleteLibraryItem error]', error);
-    } catch (err) {
+      if (error) {
+        console.warn('[Supabase deleteLibraryItem error]', error);
+        return { ok: false, error: error.message };
+      }
+      return { ok: true };
+    } catch (err: any) {
       console.warn('[Supabase deleteLibraryItem error]', err);
+      return { ok: false, error: err?.message };
     }
   }
 
@@ -623,7 +692,12 @@ export class SupabaseSyncService {
         .select('*')
         .eq('user_id', userId);
 
-      if (error || !data || data.length === 0) return null;
+      // A genuinely empty list is a valid, distinct result from a fetch
+      // error — collapsing both to null (as this used to do) made it
+      // impossible for callers to tell "nothing synced yet" apart from
+      // "the request failed," which is exactly the ambiguity that caused
+      // local data to get silently overwritten elsewhere in this app.
+      if (error || !data) return null;
 
       return data.map((row: any) => ({
         id: row.id,
@@ -637,24 +711,40 @@ export class SupabaseSyncService {
   }
 
   static async syncSubject(subject: SubjectItem, userId: string): Promise<SyncResponse> {
-    if (!isSupabaseConfigured()) return { ok: false };
+    if (!isSupabaseConfigured()) return { ok: false, error: 'Supabase não configurado.' };
     try {
-      const { error } = await supabase.from('subjects').upsert(
+      const { error } = await upsertWithColumnRetry(
+        'subjects',
         {
           id: subject.id,
           user_id: userId,
           name: subject.name,
           color: subject.color,
         },
-        { onConflict: 'id' }
+        'id'
       );
       if (error) {
         console.warn('[Supabase syncSubject notice]', error.message || error);
-        return { ok: false, error: error.message };
+        return { ok: false, error: error.message, code: error.code };
       }
       return { ok: true };
     } catch (err: any) {
       console.warn('[Supabase syncSubject error]', err);
+      return { ok: false, error: err?.message };
+    }
+  }
+
+  static async deleteSubject(subjectId: string): Promise<SyncResponse> {
+    if (!isSupabaseConfigured()) return { ok: false, error: 'Supabase não configurado.' };
+    try {
+      const { error } = await supabase.from('subjects').delete().eq('id', subjectId);
+      if (error) {
+        console.warn('[Supabase deleteSubject error]', error);
+        return { ok: false, error: error.message };
+      }
+      return { ok: true };
+    } catch (err: any) {
+      console.warn('[Supabase deleteSubject error]', err);
       return { ok: false, error: err?.message };
     }
   }

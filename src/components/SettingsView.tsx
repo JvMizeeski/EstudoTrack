@@ -17,6 +17,8 @@ import {
   BookOpen,
   Plus,
   Pencil,
+  Cloud,
+  RefreshCw,
 } from 'lucide-react';
 import {
   UserProfile,
@@ -29,6 +31,7 @@ import {
 } from '../types';
 import { COLOR_PALETTES, DEFAULT_SUBJECT_COLORS } from '../lib/theme';
 import { SupabaseSyncService } from '../lib/supabaseSync';
+import { SyncQueue } from '../lib/syncQueue';
 import { DataService } from '../lib/storage';
 
 interface SettingsViewProps {
@@ -55,12 +58,29 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onSaveSettings,
   onPreviewPalette,
   onResetSettingsToDefault,
+  onManualSyncSupabase,
   onLogout,
   colorPalette,
   themeMode,
 }) => {
   const isDark = themeMode === 'dark';
   const currentPal = COLOR_PALETTES[colorPalette] || COLOR_PALETTES.purple;
+
+  const [isForceSyncing, setIsForceSyncing] = useState(false);
+  const [forceSyncDone, setForceSyncDone] = useState(false);
+
+  const handleForceSync = async () => {
+    if (!onManualSyncSupabase) return;
+    setIsForceSyncing(true);
+    setForceSyncDone(false);
+    try {
+      await onManualSyncSupabase();
+      setForceSyncDone(true);
+      setTimeout(() => setForceSyncDone(false), 2500);
+    } finally {
+      setIsForceSyncing(false);
+    }
+  };
 
   // Profile Form state
   const [name, setName] = useState(user?.name || '');
@@ -110,7 +130,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setSubjectFormError('Já existe uma disciplina cadastrada com esse nome.');
       return;
     }
-    DataService.addSubject(clean, newSubjectColorPick, user.id);
+    const created = DataService.addSubject(clean, newSubjectColorPick, user.id);
+    SyncQueue.enqueue(user.id, 'subject', 'upsert', created).catch(() => {});
     setSubjects(DataService.getSubjects(user.id));
     setNewSubjectName('');
     setSubjectFormError('');
@@ -139,7 +160,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setSubjectFormError('Já existe uma disciplina cadastrada com esse nome.');
       return;
     }
-    DataService.updateSubject(editingSubjectId, { name: clean, color: editSubjectColor }, user.id);
+    const updatedSubject = DataService.updateSubject(editingSubjectId, { name: clean, color: editSubjectColor }, user.id);
+    if (updatedSubject) {
+      SyncQueue.enqueue(user.id, 'subject', 'upsert', updatedSubject).catch(() => {});
+    }
     setSubjects(DataService.getSubjects(user.id));
     setEditingSubjectId(null);
     setSubjectFormError('');
@@ -148,6 +172,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const confirmDeleteSubject = () => {
     if (!subjectPendingDelete) return;
     DataService.deleteSubject(subjectPendingDelete.id, user.id);
+    SyncQueue.enqueue(user.id, 'subject', 'delete', { id: subjectPendingDelete.id }).catch(() => {});
     setSubjects(DataService.getSubjects(user.id));
     setSubjectPendingDelete(null);
   };
@@ -343,6 +368,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
           </div>
         </form>
+      </section>
+
+      {/* SINCRONIZAÇÃO COM A NUVEM */}
+      <section
+        className={`rounded-3xl border p-5 sm:p-6 shadow-sm transition-all ${
+          isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200'
+        }`}
+      >
+        <div className="flex items-center gap-2.5 pb-4 border-b mb-4" style={{ borderColor: isDark ? 'rgba(51, 65, 85, 0.6)' : 'rgba(226, 232, 240, 0.9)' }}>
+          <Cloud className="w-5 h-5" style={{ color: currentPal.previewColor }} />
+          <h2 className={`font-bold text-base ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>Sincronização com a Nuvem</h2>
+        </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs sm:text-sm">
+          <p className={`max-w-lg ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+            A sincronização com a nuvem acontece automaticamente a cada alteração — este botão é só um recurso de
+            emergência, para forçar um reenvio completo caso algo pareça fora de sincronia.
+          </p>
+
+          <button
+            type="button"
+            onClick={handleForceSync}
+            disabled={isForceSyncing || !onManualSyncSupabase}
+            className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-white shadow-xs cursor-pointer shrink-0 transition-colors disabled:opacity-50"
+            style={{ backgroundColor: currentPal.previewColor }}
+          >
+            <RefreshCw className={`w-4 h-4 ${isForceSyncing ? 'animate-spin' : ''}`} />
+            <span>{isForceSyncing ? 'Sincronizando...' : forceSyncDone ? 'Sincronizado!' : 'Forçar Sincronização'}</span>
+          </button>
+        </div>
       </section>
 
       {/* 2. TEMAS & PALETAS DE CORES */}

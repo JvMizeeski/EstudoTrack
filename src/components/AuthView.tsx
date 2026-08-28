@@ -15,6 +15,7 @@ import { ColorPalette, ThemeMode, UserProfile } from '../types';
 import { COLOR_PALETTES } from '../lib/theme';
 import { StoredUserAccount, DataService } from '../lib/storage';
 import { SupabaseSyncService } from '../lib/supabaseSync';
+import { SyncQueue } from '../lib/syncQueue';
 import { hashPassword, verifyPassword, isBcryptHash } from '../lib/passwordUtils';
 
 interface AuthViewProps {
@@ -83,7 +84,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
           return;
         }
 
-        const userId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const userId = crypto.randomUUID();
         const initialAvatar = generateInitialAvatar(name, pal.previewColor);
         const hashedPassword = await hashPassword(password);
 
@@ -113,8 +114,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
           createdAt: new Date().toISOString(),
         };
 
-        // 3. Sync profile in background
-        await SupabaseSyncService.syncProfile(newProfile, hashedPassword);
+        // 3. Sync profile — durably: if this fails right now (offline,
+        // transient error), it stays queued and keeps retrying instead of
+        // this device's account silently never reaching the cloud.
+        SyncQueue.enqueue(userId, 'profile', 'upsert', { ...newProfile, __password: hashedPassword }).catch(() => {});
 
         setSuccessMessage('Conta criada com sucesso! Entrando...');
         setTimeout(() => {

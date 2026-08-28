@@ -26,6 +26,7 @@ import { COLOR_PALETTES, DEFAULT_SUBJECT_COLORS } from '../lib/theme';
 import { formatDateToISO, getBrasiliaDate } from '../lib/dateUtils';
 import { DataService } from '../lib/storage';
 import { SupabaseSyncService } from '../lib/supabaseSync';
+import { SyncQueue } from '../lib/syncQueue';
 import { RichNoteEditor } from './RichNoteEditor';
 import { ConfirmDeleteTaskModal } from './ConfirmDeleteTaskModal';
 
@@ -78,6 +79,15 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
   const [notes, setNotes] = useState(task?.notes || '');
   const [notesHtml, setNotesHtml] = useState(task?.notesHtml || '');
   const [images, setImages] = useState<string[]>(task?.images || []);
+  // Transient, in-memory previews for images still uploading — shown next
+  // to the real (already-uploaded) attachments, but never written to
+  // `images` state or localStorage. A base64 data: URI used to be inserted
+  // immediately and only swapped for the Storage URL afterwards; if the
+  // upload failed, that base64 stayed forever, silently bloating (and
+  // eventually blowing) the localStorage quota for this user's whole task
+  // list.
+  const [pendingImagePreviews, setPendingImagePreviews] = useState<{ tempId: string; url: string }[]>([]);
+  const [imageUploadError, setImageUploadError] = useState('');
   const [imageUrlInput, setImageUrlInput] = useState('');
   const [reviewScheduled, setReviewScheduled] = useState(task?.reviewScheduled ?? true);
   const [priority, setPriority] = useState<TaskPriority>(task?.priority || 'medium');
@@ -94,7 +104,7 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
-      const loaded = DataService.getSubjects();
+      const loaded = DataService.getSubjects(userId);
       setSubjectList(loaded);
       setTitle(task?.title || '');
       setDate(task?.date || defaultDate);
@@ -107,6 +117,11 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
       setNotes(task?.notes || '');
       setNotesHtml(task?.notesHtml || '');
       setImages(task?.images || []);
+      setPendingImagePreviews((prev) => {
+        prev.forEach((p) => URL.revokeObjectURL(p.url));
+        return [];
+      });
+      setImageUploadError('');
       setReviewScheduled(task?.reviewScheduled ?? false);
       setPriority(task?.priority || 'medium');
       setTags(task?.tags || []);
@@ -138,25 +153,30 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
   if (!isOpen) return null;
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+    const files = Array.from(e.target.files || []).filter((f) => f.type.startsWith('image/'));
+    e.target.value = '';
+    if (files.length === 0) return;
+    setImageUploadError('');
 
-    const fileList: File[] = Array.from(files);
-    fileList.forEach((file: File) => {
-      if (!file.type.startsWith('image/')) return;
-      const reader = new FileReader();
-      reader.onload = async (loadEvt) => {
-        const base64 = loadEvt.target?.result as string;
-        if (!base64) return;
-        // Show it immediately, then swap for the Supabase Storage URL once it
-        // uploads (falls back to the base64 itself if the upload fails).
-        setImages((prev) => [...prev, base64]);
-        const finalUrl = await SupabaseSyncService.uploadTaskImage(userId, base64);
-        if (finalUrl && finalUrl !== base64) {
-          setImages((prev) => prev.map((img) => (img === base64 ? finalUrl : img)));
+    files.forEach((file) => {
+      const tempId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const previewUrl = URL.createObjectURL(file);
+      setPendingImagePreviews((prev) => [...prev, { tempId, url: previewUrl }]);
+
+      (async () => {
+        try {
+          const uploadedUrl = await SupabaseSyncService.uploadTaskImage(userId, file);
+          if (!uploadedUrl || uploadedUrl.startsWith('data:')) {
+            throw new Error('upload failed');
+          }
+          setImages((prev) => [...prev, uploadedUrl]);
+        } catch {
+          setImageUploadError('Falha ao enviar uma imagem para a nuvem — ela não foi anexada. Verifique sua conexão e tente novamente.');
+        } finally {
+          setPendingImagePreviews((prev) => prev.filter((p) => p.tempId !== tempId));
+          URL.revokeObjectURL(previewUrl);
         }
-      };
-      reader.readAsDataURL(file);
+      })();
     });
   };
 
@@ -182,8 +202,9 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
   const handleCreateNewSubject = (nameToCreate: string) => {
     const cleanName = nameToCreate.trim();
     if (!cleanName) return;
-    const created = DataService.addSubject(cleanName, newSubjectColor);
-    const updated = DataService.getSubjects();
+    const created = DataService.addSubject(cleanName, newSubjectColor, userId);
+    SyncQueue.enqueue(userId, 'subject', 'upsert', created).catch(() => {});
+    const updated = DataService.getSubjects(userId);
     setSubjectList(updated);
     setSelectedSubject(created.name);
     setSubjectSearch(created.name);
@@ -220,7 +241,8 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
     // color the user just chose for this new subject).
     let finalCategoryColor = categoryColor;
     if (!exactMatchExists && finalSubjectName) {
-      const created = DataService.addSubject(finalSubjectName, newSubjectColor);
+      const created = DataService.addSubject(finalSubjectName, newSubjectColor, userId);
+      SyncQueue.enqueue(userId, 'subject', 'upsert', created).catch(() => {});
       finalSubjectName = created.name;
       finalCategoryColor = created.color;
     }
@@ -777,8 +799,15 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
               accentColor={pal.previewColor}
             />
 
-            {/* Attached Images Grid */}
-            {images.length > 0 && (
+            {imageUploadError && (
+              <div className="mt-3 p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-500 text-xs flex items-center gap-2 font-medium">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{imageUploadError}</span>
+              </div>
+            )}
+
+            {/* Attached Images Grid (uploaded) + in-flight upload previews */}
+            {(images.length > 0 || pendingImagePreviews.length > 0) && (
               <div className="mt-3 space-y-2">
                 <div className="flex items-center justify-between text-xs text-slate-400">
                   <span>Imagens e Diagramas Anexados ({images.length}):</span>
@@ -802,6 +831,18 @@ export const TaskEditorModal: React.FC<TaskEditorModalProps> = ({
                       >
                         <Trash2 className="w-3 h-3" />
                       </button>
+                    </div>
+                  ))}
+                  {pendingImagePreviews.map((preview) => (
+                    <div
+                      key={preview.tempId}
+                      className="relative rounded-xl overflow-hidden border border-slate-700 aspect-video bg-slate-900 opacity-60"
+                      title="Enviando para a nuvem..."
+                    >
+                      <img src={preview.url} alt="Enviando..." className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40">
+                        <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      </div>
                     </div>
                   ))}
                 </div>

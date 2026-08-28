@@ -3,7 +3,6 @@ import {
   X,
   Lock,
   Mail,
-  User,
   GraduationCap,
   Sparkles,
   ArrowRight,
@@ -21,19 +20,22 @@ interface AuthModalProps {
   currentUser: UserProfile;
   availableUsers: StoredUserAccount[];
   onLogin: (email: string, pass: string) => Promise<boolean>;
-  onRegister: (name: string, email: string, pass: string, course: string) => void;
   onSwitchUser: (userId: string) => void;
   colorPalette: ColorPalette;
   themeMode: ThemeMode;
 }
 
+// Login + quick account switcher only. Registration has a single home:
+// AuthView (the initial screen) — a second registration path used to live
+// here with its own id format and without ever syncing the profile to
+// Supabase, which is exactly the kind of drift that let accounts and their
+// data disagree about identity across devices.
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
   currentUser,
   availableUsers,
   onLogin,
-  onRegister,
   onSwitchUser,
   colorPalette,
   themeMode,
@@ -41,11 +43,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const isDark = themeMode === 'dark';
   const pal = COLOR_PALETTES[colorPalette] || COLOR_PALETTES.purple;
 
-  const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [course, setCourse] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
@@ -63,20 +62,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     e.preventDefault();
     setErrorMsg('');
 
-    if (mode === 'login') {
-      const success = await onLogin(email.trim(), password);
-      if (success) {
-        onClose();
-      } else {
-        setErrorMsg('E-mail ou senha inválidos. Tente novamente ou use uma das contas rápidas abaixo.');
-      }
-    } else {
-      if (!name.trim() || !email.trim() || !password) {
-        setErrorMsg('Preencha todos os campos obrigatórios.');
-        return;
-      }
-      onRegister(name.trim(), email.trim(), password, course.trim());
+    const success = await onLogin(email.trim(), password);
+    if (success) {
       onClose();
+    } else {
+      setErrorMsg('E-mail ou senha inválidos. Tente novamente ou use uma das contas rápidas abaixo.');
     }
   };
 
@@ -104,9 +94,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <GraduationCap className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="font-bold text-base text-slate-100">
-                {mode === 'login' ? 'Acessar Conta' : 'Criar Nova Conta'}
-              </h2>
+              <h2 className="font-bold text-base text-slate-100">Acessar Conta</h2>
               <p className="text-xs text-slate-400">Inventário de estudos individual & seguro</p>
             </div>
           </div>
@@ -118,38 +106,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </button>
         </div>
 
-        {/* Tab switch between Login and Register */}
-        <div className="grid grid-cols-2 gap-1.5 p-1 rounded-xl bg-slate-900/60 border border-slate-700/60 mb-5 text-xs font-semibold">
-          <button
-            type="button"
-            onClick={() => {
-              setMode('login');
-              setErrorMsg('');
-            }}
-            className={`py-2 rounded-lg transition-all cursor-pointer ${
-              mode === 'login'
-                ? 'bg-purple-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Entrar
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setMode('register');
-              setErrorMsg('');
-            }}
-            className={`py-2 rounded-lg transition-all cursor-pointer ${
-              mode === 'register'
-                ? 'bg-purple-600 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Cadastrar
-          </button>
-        </div>
-
         {errorMsg && (
           <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400 text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
@@ -158,36 +114,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-3.5 text-xs sm:text-sm">
-          {mode === 'register' && (
-            <>
-              <div>
-                <label className="block font-semibold mb-1 text-slate-300">Nome Completo *</label>
-                <div className="relative">
-                  <User className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
-                  <input
-                    type="text"
-                    required
-                    value={name || ''}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Seu nome"
-                    className="w-full pl-9 pr-3.5 py-2.5 rounded-xl border bg-slate-900/80 border-slate-700 text-slate-100 text-xs focus:outline-hidden focus:border-purple-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold mb-1 text-slate-300">Curso / Alvo de Estudos</label>
-                <input
-                  type="text"
-                  value={course || ''}
-                  onChange={(e) => setCourse(e.target.value)}
-                  placeholder="Ex: Engenharia, ENEM, Concurso..."
-                  className="w-full px-3.5 py-2.5 rounded-xl border bg-slate-900/80 border-slate-700 text-slate-100 text-xs focus:outline-hidden focus:border-purple-500"
-                />
-              </div>
-            </>
-          )}
-
           <div>
             <label className="block font-semibold mb-1 text-slate-300">E-mail *</label>
             <div className="relative">
@@ -223,7 +149,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-xs text-white shadow-lg cursor-pointer mt-4 transition-transform hover:scale-[1.02]"
             style={{ backgroundColor: pal.previewColor }}
           >
-            <span>{mode === 'login' ? 'Entrar no EstudoFlow' : 'Criar Conta Gratuita'}</span>
+            <span>Entrar no EstudoFlow</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </form>

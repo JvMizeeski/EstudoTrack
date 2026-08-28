@@ -26,6 +26,7 @@ import {
   AlignCenter,
   AlignRight,
   AlignJustify,
+  AlertCircle,
 } from 'lucide-react';
 
 // The resize/align extension stores width & alignment on the <img> via non-standard
@@ -61,33 +62,57 @@ interface RichNoteEditorProps {
   accentColor: string;
 }
 
-const fileToBase64 = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-
-async function insertImageFile(editor: Editor, file: File, onUploadImage: (file: File) => Promise<string>) {
+// Uploads the file first and only ever inserts a real Storage URL into the
+// document — never a base64 data: URI. A data: URI embedded in notesHtml
+// used to persist forever if the background upload failed, since nothing
+// ever went back to strip it out, quietly bloating (and eventually
+// exceeding) this user's localStorage quota. A temporary object: URL gives
+// instant visual feedback while the upload is in flight without ever
+// reaching saved state; on failure the node is removed rather than left
+// pointing at a blob: URL that would be dead on the next reload anyway.
+async function insertImageFile(
+  editor: Editor,
+  file: File,
+  onUploadImage: (file: File) => Promise<string>,
+  onError: (message: string) => void
+) {
   if (!file.type.startsWith('image/')) return;
-  const base64 = await fileToBase64(file);
-  editor.chain().focus().setImage({ src: base64 }).run();
+  const previewUrl = URL.createObjectURL(file);
+  editor.chain().focus().setImage({ src: previewUrl }).run();
+
+  const findNodePos = (src: string): number | null => {
+    let found: number | null = null;
+    editor.state.doc.descendants((node, pos) => {
+      if (found === null && node.type.name === 'imageResize' && node.attrs.src === src) {
+        found = pos;
+      }
+    });
+    return found;
+  };
+
   try {
     const finalUrl = await onUploadImage(file);
-    if (finalUrl && finalUrl !== base64) {
-      const { state } = editor;
-      state.doc.descendants((node, pos) => {
-        if (node.type.name === 'imageResize' && node.attrs.src === base64) {
-          editor.chain().command(({ tr }) => {
-            tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: finalUrl });
-            return true;
-          }).run();
-        }
-      });
+    if (!finalUrl || finalUrl.startsWith('data:')) {
+      throw new Error('Upload failed');
+    }
+    const pos = findNodePos(previewUrl);
+    if (pos !== null) {
+      editor.chain().command(({ tr }) => {
+        tr.setNodeMarkup(pos, undefined, { ...editor.state.doc.nodeAt(pos)?.attrs, src: finalUrl });
+        return true;
+      }).run();
     }
   } catch {
-    // keep the local base64 fallback already inserted
+    const pos = findNodePos(previewUrl);
+    if (pos !== null) {
+      editor.chain().command(({ tr }) => {
+        tr.delete(pos, pos + 1);
+        return true;
+      }).run();
+    }
+    onError('Falha ao enviar uma imagem para a nuvem — ela não foi inserida. Verifique sua conexão e tente novamente.');
+  } finally {
+    URL.revokeObjectURL(previewUrl);
   }
 }
 
@@ -129,6 +154,7 @@ export const RichNoteEditor: React.FC<RichNoteEditorProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isExpanded, setIsExpanded] = useState(false);
+  const [uploadError, setUploadError] = useState('');
 
   const editor = useEditor({
     extensions: [
@@ -148,14 +174,16 @@ export const RichNoteEditor: React.FC<RichNoteEditorProps> = ({
         const files = Array.from(event.clipboardData?.files || []).filter((f) => f.type.startsWith('image/'));
         if (files.length === 0) return false;
         event.preventDefault();
-        files.forEach((file) => insertImageFile(editor as Editor, file, onUploadImage));
+        setUploadError('');
+        files.forEach((file) => insertImageFile(editor as Editor, file, onUploadImage, setUploadError));
         return true;
       },
       handleDrop: (_view, event) => {
         const files = Array.from(event.dataTransfer?.files || []).filter((f) => f.type.startsWith('image/'));
         if (files.length === 0) return false;
         event.preventDefault();
-        files.forEach((file) => insertImageFile(editor as Editor, file, onUploadImage));
+        setUploadError('');
+        files.forEach((file) => insertImageFile(editor as Editor, file, onUploadImage, setUploadError));
         return true;
       },
     },
@@ -179,10 +207,11 @@ export const RichNoteEditor: React.FC<RichNoteEditorProps> = ({
 
   const handleFilePick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    for (const file of files) {
-      await insertImageFile(editor, file, onUploadImage);
-    }
     e.target.value = '';
+    setUploadError('');
+    for (const file of files) {
+      await insertImageFile(editor, file, onUploadImage, setUploadError);
+    }
   };
 
   const barClasses = isDark
@@ -286,6 +315,13 @@ export const RichNoteEditor: React.FC<RichNoteEditorProps> = ({
     />
   );
 
+  const errorBanner = uploadError && (
+    <div className="flex items-center gap-2 px-3 py-2 text-[11px] font-medium text-rose-500 bg-rose-500/10 border-b border-rose-500/20">
+      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+      <span>{uploadError}</span>
+    </div>
+  );
+
   if (isExpanded) {
     return (
       <div
@@ -293,6 +329,7 @@ export const RichNoteEditor: React.FC<RichNoteEditorProps> = ({
         style={{ ['--rich-note-accent' as any]: accentColor }}
       >
         {toolbar}
+        {errorBanner}
         {editorContent}
       </div>
     );
@@ -301,6 +338,7 @@ export const RichNoteEditor: React.FC<RichNoteEditorProps> = ({
   return (
     <div className={`rounded-xl border overflow-hidden flex flex-col ${barClasses}`} style={{ ['--rich-note-accent' as any]: accentColor }}>
       {toolbar}
+      {errorBanner}
       {editorContent}
     </div>
   );

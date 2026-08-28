@@ -19,6 +19,7 @@ import { DataService, StoredUserAccount } from './lib/storage';
 import { COLOR_PALETTES, getThemeClasses } from './lib/theme';
 import { calculateNextSpacedReviewDate, formatDateToISO, getBrasiliaDate, formatShortDate } from './lib/dateUtils';
 import { SupabaseSyncService } from './lib/supabaseSync';
+import { SyncQueue } from './lib/syncQueue';
 import { hashPassword, verifyPassword, isBcryptHash } from './lib/passwordUtils';
 
 import { Sidebar } from './components/Sidebar';
@@ -37,7 +38,20 @@ import { Toast, ToastData } from './components/Toast';
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     const authId = DataService.getAuthenticatedUserId();
-    return Boolean(authId);
+    if (!authId) return false;
+    // An AUTHENTICATED_USER_ID pointing at an account that no longer exists
+    // in the local registry (corrupted/cleared estudotrack_users_db, a
+    // fresh browser profile, etc.) used to fall through to a fabricated
+    // 'user-default-1' phantom identity instead of forcing a real login —
+    // that's how cards ended up scattered across seven different user_ids
+    // in Supabase, none of them a real registered profile. Treat an orphaned
+    // pointer as "not authenticated" instead.
+    const hasMatchingAccount = DataService.getUsers().some((u) => u.id === authId);
+    if (!hasMatchingAccount) {
+      DataService.setAuthenticatedUserId(null);
+      return false;
+    }
+    return true;
   });
 
   // App state
@@ -111,6 +125,58 @@ export default function App() {
     });
   };
 
+  // Sync status indicator (pending outbox entries, whether a sweep is
+  // running right now, and basic browser online/offline awareness)
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [isSyncingNow, setIsSyncingNow] = useState(false);
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator === 'undefined' ? true : navigator.onLine
+  );
+
+  useEffect(() => {
+    // Surface a failed localStorage write (quota exceeded, private
+    // browsing, etc.) instead of leaving it silent in the console forever.
+    DataService.onStorageError = (message) => {
+      setToast({ message, type: 'error' });
+    };
+    return () => {
+      DataService.onStorageError = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const uid = currentUserAccount.id;
+    if (!uid) return;
+
+    const refresh = () => {
+      setPendingSyncCount(SyncQueue.size(uid));
+      setIsSyncingNow(SyncQueue.isProcessing(uid));
+    };
+    refresh();
+    const unsubscribe = SyncQueue.onChange(refresh);
+
+    SyncQueue.startBoot(uid);
+
+    const handleOnline = () => {
+      setIsOnline(true);
+      SyncQueue.process(uid);
+    };
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [currentUserAccount.id]);
+
+  const handleForceSync = () => {
+    if (!currentUserAccount.id) return;
+    SyncQueue.process(currentUserAccount.id);
+  };
+
   // Sync state whenever active user changes
   const reloadUserData = (userId: string) => {
     const user = DataService.getUsers().find((u) => u.id === userId) || DataService.getCurrentUser();
@@ -141,12 +207,32 @@ export default function App() {
 
   const [isRealtimeActive, setIsRealtimeActive] = useState(false);
 
+  // Any local record missing from a remote snapshot didn't make it to the
+  // cloud yet (offline, dropped mid-upload, transient error) — re-queue it
+  // for automatic resend instead of leaving it stranded until the next
+  // unrelated edit happens to touch it.
+  function reconcileMissing<T extends { id: string }>(
+    entity: 'task' | 'library' | 'subject',
+    userId: string,
+    localList: T[],
+    remoteList: T[]
+  ): void {
+    const remoteIds = new Set(remoteList.map((item) => item.id));
+    const missing = localList.filter((item) => !remoteIds.has(item.id));
+    if (missing.length === 0) return;
+    missing.forEach((item) => {
+      SyncQueue.enqueue(userId, entity, 'upsert', item).catch(() => {});
+    });
+    console.warn(`[Supabase Sync] Re-queued ${missing.length} local "${entity}" record(s) missing from the remote snapshot.`);
+  }
+
   const fetchRemoteData = async (userId: string) => {
     try {
-      const [remoteProfile, remoteTasks, remoteLib, leaderboard] = await Promise.all([
+      const [remoteProfile, remoteTasks, remoteLib, remoteSubjects, leaderboard] = await Promise.all([
         SupabaseSyncService.fetchProfile(userId),
         SupabaseSyncService.fetchTasks(userId),
         SupabaseSyncService.fetchLibrary(userId),
+        SupabaseSyncService.fetchSubjects(userId),
         SupabaseSyncService.fetchLeaderboard(userId),
       ]);
 
@@ -158,11 +244,13 @@ export default function App() {
       // reported as zero rows instead of a real error. Never let that silently
       // wipe out a local cache that already has data — only accept the remote
       // list when it isn't empty, or when there was nothing local to lose.
+      // KEEP THIS GUARD — it's the fix for the original data-loss bug.
       const localTasksNow = DataService.getTasks(userId);
       if (remoteTasks !== null) {
         if (remoteTasks.length > 0 || localTasksNow.length === 0) {
           setTasks(remoteTasks);
           DataService.saveTasks(remoteTasks, userId);
+          reconcileMissing('task', userId, localTasksNow, remoteTasks);
         } else {
           console.warn('[Supabase Sync] Remote returned 0 tasks but local cache has data — keeping local cache, skipping overwrite.');
         }
@@ -172,8 +260,18 @@ export default function App() {
         if (remoteLib.length > 0 || localLibNow.length === 0) {
           setLibraryItems(remoteLib);
           DataService.saveLibrary(remoteLib, userId);
+          reconcileMissing('library', userId, localLibNow, remoteLib);
         } else {
           console.warn('[Supabase Sync] Remote returned 0 library items but local cache has data — keeping local cache, skipping overwrite.');
+        }
+      }
+      const localSubjectsNow = DataService.getSubjects(userId);
+      if (remoteSubjects !== null) {
+        if (remoteSubjects.length > 0 || localSubjectsNow.length === 0) {
+          DataService.saveSubjects(remoteSubjects, userId);
+          reconcileMissing('subject', userId, localSubjectsNow, remoteSubjects);
+        } else {
+          console.warn('[Supabase Sync] Remote returned 0 subjects but local cache has data — keeping local cache, skipping overwrite.');
         }
       }
       setRankingPeers(leaderboard);
@@ -239,6 +337,19 @@ export default function App() {
       onProfileUpdate: (profile) => {
         setUserProfile(profile);
       },
+      onSubjectsChange: (subjects) => {
+        const localNow = DataService.getSubjects(currentUserAccount.id);
+        if (subjects.length > 0 || localNow.length === 0) {
+          DataService.saveSubjects(subjects, currentUserAccount.id);
+        }
+      },
+      onReconnected: () => {
+        // Anything that changed while the realtime connection was down was
+        // missed — catch up with a full re-pull and flush whatever the
+        // outbox still owes the cloud.
+        fetchRemoteData(currentUserAccount.id);
+        SyncQueue.process(currentUserAccount.id);
+      },
     });
 
     return () => {
@@ -247,19 +358,18 @@ export default function App() {
   }, [currentUserAccount.id]);
 
   const handleManualSyncSupabase = async () => {
-    // Sync Profile
-    await SupabaseSyncService.syncProfile(userProfile);
-    // Sync all local tasks
+    // Emergency-only manual push: everyday sync is automatic via the outbox
+    // queue (SyncQueue) — this just forces an immediate full re-sync of
+    // everything currently held locally, then pulls the latest back.
+    await SyncQueue.enqueue(currentUserAccount.id, 'profile', 'upsert', userProfile);
     for (const t of tasks) {
-      await SupabaseSyncService.syncTask(t);
+      await SyncQueue.enqueue(currentUserAccount.id, 'task', 'upsert', t);
     }
-    // Sync library items
     for (const item of libraryItems) {
-      await SupabaseSyncService.syncLibraryItem(item);
+      await SyncQueue.enqueue(currentUserAccount.id, 'library', 'upsert', item);
     }
-    // Fetch latest back
     await fetchRemoteData(currentUserAccount.id);
-    DataService.addAuditLog('Sincronização Nuvem', 'Sincronização com Supabase efetuada', currentUserAccount.id);
+    DataService.addAuditLog('Sincronização Nuvem', 'Sincronização manual com Supabase efetuada', currentUserAccount.id);
     setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
   };
 
@@ -269,7 +379,7 @@ export default function App() {
     setUserProfile(updatedProfile);
     // Sync immediately so the new XP shows up in the cross-user ranking
     // right away, instead of only after a manual "sync now" click.
-    SupabaseSyncService.syncProfile(updatedProfile);
+    SyncQueue.enqueue(currentUserAccount.id, 'profile', 'upsert', updatedProfile).catch(() => {});
 
     DataService.addAuditLog('Ganho de XP', `+${amount} XP: ${reason}`, currentUserAccount.id);
     setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
@@ -290,44 +400,47 @@ export default function App() {
     setIsTaskEditorOpen(true);
   };
 
-  const handleSaveTask = (taskData: Omit<StudyTask, 'id' | 'userId' | 'createdAt'> & { id?: string }) => {
+  const handleSaveTask = async (taskData: Omit<StudyTask, 'id' | 'userId' | 'createdAt'> & { id?: string }) => {
     if (taskData.id) {
       // Update existing
-      const updatedList = tasks.map((t) => {
-        if (t.id === taskData.id) {
-          const updatedItem = {
-            ...t,
-            ...taskData,
-          } as StudyTask;
-          SupabaseSyncService.syncTask(updatedItem);
-          return updatedItem;
-        }
-        return t;
-      });
+      const updatedItem: StudyTask = { ...(tasks.find((t) => t.id === taskData.id) as StudyTask), ...taskData };
+      const updatedList = tasks.map((t) => (t.id === taskData.id ? updatedItem : t));
       setTasks(updatedList);
       DataService.saveTasks(updatedList, currentUserAccount.id);
       DataService.addAuditLog('Edição de Tarefa', `Atualizou o card "${taskData.title}"`, currentUserAccount.id);
-      setToast({ message: `Alterações em "${taskData.title}" salvas!`, type: 'success' });
+      setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
+
+      const result = await SyncQueue.enqueue(currentUserAccount.id, 'task', 'upsert', updatedItem);
+      setToast(
+        result.ok
+          ? { message: `Alterações em "${taskData.title}" salvas!`, type: 'success' }
+          : { message: `"${taskData.title}" salvo localmente — sincronização pendente.`, type: 'error' }
+      );
     } else {
       // Create new
       const newTask: StudyTask = {
         ...taskData,
-        id: 'task-' + Date.now(),
+        id: crypto.randomUUID(),
         userId: currentUserAccount.id,
         createdAt: new Date().toISOString(),
       };
       const updatedList = [newTask, ...tasks];
       setTasks(updatedList);
       DataService.saveTasks(updatedList, currentUserAccount.id);
-      SupabaseSyncService.syncTask(newTask);
       awardXP(25, `Criação do card "${newTask.title}"`);
       DataService.addAuditLog('Criação de Tarefa', `Criou o card de estudos "${newTask.title}"`, currentUserAccount.id);
-      setToast({ message: `Card "${newTask.title}" criado com sucesso!`, type: 'success' });
+      setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
+
+      const result = await SyncQueue.enqueue(currentUserAccount.id, 'task', 'upsert', newTask);
+      setToast(
+        result.ok
+          ? { message: `Card "${newTask.title}" criado com sucesso!`, type: 'success' }
+          : { message: `"${newTask.title}" salvo localmente — sincronização pendente.`, type: 'error' }
+      );
     }
-    setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
   };
 
-  const handleDeleteTask = (taskId: string, scope: 'all' | 'occurrence' = 'all', occurrenceDate?: string) => {
+  const handleDeleteTask = async (taskId: string, scope: 'all' | 'occurrence' = 'all', occurrenceDate?: string) => {
     const target = tasks.find((t) => t.id === taskId);
     if (!target) return;
 
@@ -337,27 +450,32 @@ export default function App() {
       const updatedList = tasks.map((t) => (t.id === taskId ? updatedItem : t));
       setTasks(updatedList);
       DataService.saveTasks(updatedList, currentUserAccount.id);
-      SupabaseSyncService.syncTask(updatedItem);
       DataService.addAuditLog(
         'Exclusão de Ocorrência',
         `Removeu a ocorrência de ${occurrenceDate} do card "${target.title}"`,
         currentUserAccount.id
       );
       setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
-      setToast({ message: `Ocorrência de ${formatShortDate(occurrenceDate)} removida.`, type: 'delete' });
+
+      const result = await SyncQueue.enqueue(currentUserAccount.id, 'task', 'upsert', updatedItem);
+      setToast(
+        result.ok
+          ? { message: `Ocorrência de ${formatShortDate(occurrenceDate)} removida.`, type: 'delete' }
+          : { message: `Ocorrência removida localmente — sincronização pendente.`, type: 'error' }
+      );
       return;
     }
 
     const updated = tasks.filter((t) => t.id !== taskId);
     setTasks(updated);
     DataService.saveTasks(updated, currentUserAccount.id);
-    SupabaseSyncService.deleteTask(taskId);
     DataService.addAuditLog('Exclusão de Tarefa', `Removeu o card "${target.title}"`, currentUserAccount.id);
     setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
     setToast({ message: `Card "${target.title}" excluído.`, type: 'delete' });
+    SyncQueue.enqueue(currentUserAccount.id, 'task', 'delete', { id: taskId }).catch(() => {});
   };
 
-  const handleToggleTaskComplete = (taskId: string, completed: boolean, occurrenceDate?: string) => {
+  const handleToggleTaskComplete = async (taskId: string, completed: boolean, occurrenceDate?: string) => {
     const target = tasks.find((t) => t.id === taskId);
     if (!target) return;
 
@@ -382,7 +500,7 @@ export default function App() {
     const updated = tasks.map((t) => (t.id === taskId ? completedItem : t));
     setTasks(updated);
     DataService.saveTasks(updated, currentUserAccount.id);
-    SupabaseSyncService.syncTask(completedItem);
+    const syncResultPromise = SyncQueue.enqueue(currentUserAccount.id, 'task', 'upsert', completedItem);
 
     if (completed) {
       awardXP(35, `Conclusão do estudo "${target.title}"`);
@@ -392,7 +510,7 @@ export default function App() {
       if (target.reviewScheduled) {
         const nextReview = calculateNextSpacedReviewDate(target.reviewStage || 1, dateKey);
         const newNotif: NotificationItem = {
-          id: 'notif-' + Date.now(),
+          id: crypto.randomUUID(),
           userId: currentUserAccount.id,
           title: 'Revisão Espaçada Agendada',
           message: `Próxima revisão de "${target.title}" programada para ${nextReview.nextDate}.`,
@@ -407,19 +525,24 @@ export default function App() {
       }
     }
     setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
+
+    const result = await syncResultPromise;
+    if (!result.ok) {
+      setToast({ message: `Progresso de "${target.title}" salvo localmente — sincronização pendente.`, type: 'error' });
+    }
   };
 
   const handleScheduleReview = (task: StudyTask) => {
-    const nextReview = calculateNextSpacedReviewDate(task.reviewStage || 1, task.date);
     const updated = tasks.map((t) => {
       if (t.id === task.id) {
+        const nextReview = calculateNextSpacedReviewDate(task.reviewStage || 1, task.date);
         const updatedItem = {
           ...t,
           reviewScheduled: true,
           nextReviewDate: nextReview.nextDate,
           reviewStage: nextReview.nextStage,
         };
-        SupabaseSyncService.syncTask(updatedItem);
+        SyncQueue.enqueue(currentUserAccount.id, 'task', 'upsert', updatedItem).catch(() => {});
         return updatedItem;
       }
       return t;
@@ -430,27 +553,32 @@ export default function App() {
   };
 
   // 2. Library Operations
-  const handleAddLibraryItem = (itemData: Omit<LibraryItem, 'id' | 'userId' | 'createdAt'>) => {
+  const handleAddLibraryItem = async (itemData: Omit<LibraryItem, 'id' | 'userId' | 'createdAt'>) => {
     const newItem: LibraryItem = {
       ...itemData,
-      id: 'lib-' + Date.now(),
+      id: crypto.randomUUID(),
       userId: currentUserAccount.id,
       createdAt: new Date().toISOString(),
     };
     const updated = [newItem, ...libraryItems];
     setLibraryItems(updated);
     DataService.saveLibrary(updated, currentUserAccount.id);
-    SupabaseSyncService.syncLibraryItem(newItem);
     awardXP(30, `Adicionou "${newItem.title}" ao acervo`);
     DataService.addAuditLog('Biblioteca', `Adicionou a obra "${newItem.title}"`, currentUserAccount.id);
     setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
+
+    const result = await SyncQueue.enqueue(currentUserAccount.id, 'library', 'upsert', newItem);
+    if (!result.ok) {
+      setToast({ message: `"${newItem.title}" salvo localmente — sincronização pendente.`, type: 'error' });
+    }
   };
 
-  const handleUpdateLibraryItem = (id: string, updates: Partial<LibraryItem>) => {
+  const handleUpdateLibraryItem = async (id: string, updates: Partial<LibraryItem>) => {
+    let updatedItemRef: LibraryItem | null = null;
     const updated = libraryItems.map((item) => {
       if (item.id === id) {
         const itemUpdated = { ...item, ...updates };
-        SupabaseSyncService.syncLibraryItem(itemUpdated);
+        updatedItemRef = itemUpdated;
         return itemUpdated;
       }
       return item;
@@ -459,13 +587,19 @@ export default function App() {
     DataService.saveLibrary(updated, currentUserAccount.id);
     DataService.addAuditLog('Biblioteca', `Atualizou o progresso da obra`, currentUserAccount.id);
     setAuditLogs(DataService.getAuditLogs(currentUserAccount.id));
+
+    if (!updatedItemRef) return;
+    const result = await SyncQueue.enqueue(currentUserAccount.id, 'library', 'upsert', updatedItemRef);
+    if (!result.ok) {
+      setToast({ message: `Alteração salva localmente — sincronização pendente.`, type: 'error' });
+    }
   };
 
   const handleDeleteLibraryItem = (id: string) => {
     const updated = libraryItems.filter((item) => item.id !== id);
     setLibraryItems(updated);
     DataService.saveLibrary(updated, currentUserAccount.id);
-    SupabaseSyncService.deleteLibraryItem(id);
+    SyncQueue.enqueue(currentUserAccount.id, 'library', 'delete', { id }).catch(() => {});
   };
 
 
@@ -479,7 +613,7 @@ export default function App() {
       avatar: updates.avatar,
     });
     setCurrentUserAccount(updatedAccount);
-    SupabaseSyncService.syncProfile(newProfile);
+    SyncQueue.enqueue(currentUserAccount.id, 'profile', 'upsert', newProfile).catch(() => {});
   };
 
   const handleSaveSettings = (newSettings: AppSettings) => {
@@ -532,23 +666,6 @@ export default function App() {
     setIsAuthenticated(true);
     reloadUserData(found.id);
     return true;
-  };
-
-  const handleRegister = async (name: string, email: string, pass: string, course: string) => {
-    const newUserId = 'user-' + Date.now();
-    const newAccount: StoredUserAccount = {
-      id: newUserId,
-      name,
-      email: email || `${name.trim().toLowerCase().replace(/\s+/g, '.')}@estudotrack.local`,
-      passwordHash: await hashPassword(pass),
-      avatar: '',
-      courseOrGoal: course,
-      createdAt: new Date().toISOString(),
-    };
-    DataService.registerUser(newAccount);
-    setAvailableUsers(DataService.getUsers());
-    setIsAuthenticated(true);
-    reloadUserData(newUserId);
   };
 
   const handleSwitchUser = (userId: string) => {
@@ -666,6 +783,10 @@ export default function App() {
         isRealtimeActive={isRealtimeActive}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={handleToggleSidebarCollapse}
+        isOnline={isOnline}
+        isSyncingNow={isSyncingNow}
+        pendingSyncCount={pendingSyncCount}
+        onForceSync={handleForceSync}
       />
 
       {/* Main App Content Viewport */}
@@ -794,7 +915,6 @@ export default function App() {
         currentUser={userProfile}
         availableUsers={availableUsers}
         onLogin={handleLogin}
-        onRegister={handleRegister}
         onSwitchUser={handleSwitchUser}
         colorPalette={activePalette}
         themeMode={settings.themeMode}
